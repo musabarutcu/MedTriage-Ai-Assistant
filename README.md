@@ -69,4 +69,4 @@ Bu sistem:
 - Gerçek klinik ortamda tek başına **kullanılamaz**
 - Yalnızca eğitim ve araştırma amaçlıdır
 
-**Geliştirici**: Portfolyo Demo | **Lisans**: MIT
+**Geliştirici**: Musa Barutcu 
