@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 310 68">
+  <!-- MEDTRIAGE wordmark -->
+  <text
+    x="0" y="46"
+    font-family="'Arial Black', 'Arial Bold', Arial, 'Helvetica Neue', sans-serif"
+    font-weight="900"
+    font-size="48"
+    letter-spacing="-0.5">
+    <tspan fill="#1B2535">MED</tspan><tspan fill="#7A1F2B">TRIAGE</tspan>
+  </text>
+  <!-- Subtitle -->
+  <text
+    x="2" y="64"
+    font-family="'Helvetica Neue', Arial, sans-serif"
+    font-weight="400"
+    font-size="12.5"
+    fill="#8A9BAD"
+    letter-spacing="0.4">
+    AI-Powered Medical Triage Assistant
+  </text>
+</svg>
