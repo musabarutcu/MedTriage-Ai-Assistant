@@ -1,0 +1,26 @@
+# Streamlit taban teması
+#
+# NEDEN GEREKLİ: Bu dosya yokken Streamlit temayı işletim sistemi
+# tercihine göre seçiyordu. Sistem koyu temadaysa widget varsayılanları
+# koyu geliyor ve shared/theme.py bunu CSS ile örtmeye çalışıyordu.
+#
+# CSS override'ları DOM elemanlarında çalışır, ancak canvas ile çizilen
+# bileşenlerde (st.dataframe) çalışmaz. Sonuç: açık temalı bir uygulamada
+# koyu tablolar ve beyaz zeminde beyaz radio etiketleri.
+#
+# Temayı burada sabitlemek sorunu kaynağında çözer; theme.py yalnızca
+# marka katmanını ekler, temel temayla kavga etmez.
+
+[theme]
+base = "light"
+primaryColor = "#7A1F2B"              # --color-brand
+backgroundColor = "#F5F5F7"           # --color-canvas
+secondaryBackgroundColor = "#FFFFFF"  # --color-surface
+textColor = "#1D1D1F"                 # --color-ink
+font = "sans serif"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false

@@ -5,12 +5,18 @@ KTAS (Korean Triage and Acuity Scale) veri setini yükleyen ve temizleyen modül
 Desteklenen format: .xlsx ve .csv
 """
 
-import os
 import re
+import sys
 import logging
 import pandas as pd
 import numpy as np
 from pathlib import Path
+
+_PROJECT_ROOT = Path(__file__).parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from shared.symptoms import normalize as normalize_symptom
 
 logger = logging.getLogger(__name__)
 
@@ -215,7 +221,10 @@ def _clean_vitals(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def load_ktas(file_path: str | Path | None = None) -> pd.DataFrame:
+def load_ktas(
+    file_path: str | Path | None = None,
+    impute: bool = False,
+) -> pd.DataFrame:
     """
     KTAS veri setini yükler, sütun adlarını standartlaştırır ve temizler.
 
@@ -282,12 +291,39 @@ def load_ktas(file_path: str | Path | None = None) -> pd.DataFrame:
     # Hedef değişkeni belirle
     df = _determine_target(df)
 
-    # Eksik değerleri doldur
-    logger.info("Eksik değer imputasyonu başlıyor...")
-    df = _impute_missing(df)
-
-    # Hedef değişkeni integer'a çevir
+    # Hedefi olmayan satırlar eğitilemez — doldurulmaz, düşürülür.
+    # (Hedefi impute etmek uydurma etiket üretmek demektir.)
+    missing_target = df["ktas_level"].isna().sum()
+    if missing_target:
+        logger.warning("%d satırda hedef (ktas_level) yok → düşürüldü", missing_target)
+        df = df[df["ktas_level"].notna()].copy()
     df["ktas_level"] = df["ktas_level"].astype(int)
+
+    # Kanonik semptom kodu — serbest metni modele sokulabilir hale getirir.
+    # shared/symptoms.py tek doğruluk kaynağıdır; form da aynı kodları üretir.
+    if "chief_complaint" in df.columns:
+        df["symptom_code"] = df["chief_complaint"].map(normalize_symptom)
+        covered = (df["symptom_code"] != "other").mean()
+        logger.info("Semptom kodu türetildi — taksonomi kapsamı: %%%.1f", covered * 100)
+
+    # ------------------------------------------------------------------
+    # IMPUTATION VARSAYILAN OLARAK YAPILMAZ.
+    #
+    # Eskiden burada tüm veri setinin medyanı ile doldurma yapılıyordu.
+    # İki ayrı soruna yol açıyordu:
+    #   1. Train/test ayrımından önce hesaplandığı için veri sızıntısı,
+    #   2. Eksiklik bilgisi yok oluyordu — oysa SpO2'nin %54'ü, ağrı
+    #      skorunun %44'ü eksik ve "ölçülmemiş olması" başlı başına
+    #      klinik bir sinyal.
+    # Doldurma artık eğitim Pipeline'ının içinde, yalnızca eğitim
+    # katlaması üzerinde yapılıyor.
+    #
+    # impute=True yalnızca imputasyon isteyen tüketiciler içindir
+    # (ör. KNN benzer vaka mesafesi).
+    # ------------------------------------------------------------------
+    if impute:
+        logger.info("Eksik değer imputasyonu başlıyor (impute=True)...")
+        df = _impute_missing(df)
 
     final_shape = df.shape
     logger.info(
@@ -317,8 +353,11 @@ def get_feature_columns(df: pd.DataFrame) -> list[str]:
     exclude = {
         # Hedef / yedek hedef
         "ktas_level", "nurse_ktas",
-        # Serbest metin (model icin encode edilmemis)
+        # Serbest metin — yerine kanonik 'symptom_code' kullanilir
         "chief_complaint", "diagnosis",
+        # Cikarim sirasinda formda sabit 5 kodlanmis; egitim/cikarim
+        # dagilim uyusmazligi yaratir.
+        "patients_per_hour",
         # Veri sizintisi: sadece ED sonrasi bilinen degiskenler
         "los_min", "ktas_duration_min", "mistriage", "error_group",
         "disposition",

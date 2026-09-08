@@ -13,7 +13,6 @@ Akış (oturum başına bir kez):
 """
 
 import sys
-import time
 import base64
 from pathlib import Path
 from datetime import datetime
@@ -25,7 +24,8 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from shared.theme import apply_theme
-from shared.queue_store import init_db, log_consent
+from shared.queue_store import init_db, log_consent, reset_demo_data
+from shared.auth import ROLES, ROLE_LABELS, ROLE_HOME
 
 _ASSETS = _PROJECT_ROOT / "assets"
 
@@ -43,6 +43,33 @@ st.set_page_config(
 # ---------------------------------------------------------------------------
 init_db()
 
+
+# ---------------------------------------------------------------------------
+# Demo verisi sıfırlama
+#
+# @st.cache_resource sayesinde bu fonksiyon SUNUCU ÖMRÜ BOYUNCA BİR KEZ
+# çalışır: sayfa yenilemelerinde veya sekme değiştirmede tekrar çalışmaz.
+# Yani oturum içinde girilen hastalar korunur, yalnızca uygulama yeniden
+# başlatıldığında kuyruk temizlenir.
+#
+# Gerekçe: SQLite dosyası diskte kalıcı olduğundan, önceki demolarda
+# girilen test hastaları "41 gün bekliyor" diye kuyrukta durmaya devam
+# ediyordu. Gerçek bir hastane kurulumunda RESET_DEMO_ON_START = False
+# yapılmalıdır — orada veri kalıcılığı zaten istenen davranıştır.
+# ---------------------------------------------------------------------------
+RESET_DEMO_ON_START = True
+
+
+@st.cache_resource(show_spinner=False)
+def _reset_demo_once() -> dict:
+    """Sunucu başına bir kez demo verisini temizler."""
+    if not RESET_DEMO_ON_START:
+        return {"patients": 0, "decisions": 0}
+    return reset_demo_data()
+
+
+_reset_demo_once()
+
 # ---------------------------------------------------------------------------
 # Tema enjeksiyon
 # ---------------------------------------------------------------------------
@@ -57,6 +84,10 @@ if "kvkk_accepted" not in st.session_state:
     st.session_state.kvkk_accepted = False
 if "kvkk_timestamp" not in st.session_state:
     st.session_state.kvkk_timestamp = None
+if "user_role" not in st.session_state:
+    st.session_state.user_role = ""
+if "user_name" not in st.session_state:
+    st.session_state.user_name = ""
 
 
 # ---------------------------------------------------------------------------
@@ -183,13 +214,19 @@ MedTriage, acil servis triaj sürecinde sağlık personeline karar destek sunmak
             st.markdown("</div>", unsafe_allow_html=True)
 
         with col_btn:
+            # `disabled` kullanılmıyor: bayrak bir önceki çalıştırmanın
+            # checkbox değerine bakıyor, bu yüzden kullanıcı kutuyu işaretleyip
+            # hemen tıkladığında ilk tıklama devre dışı butona düşüp
+            # kayboluyordu. Doğrulama tıklama anında yapılıyor.
             if st.button(
                 "Kabul Et ve Devam Et →",
                 key="kvkk_accept_btn",
                 type="primary",
                 use_container_width=True,
-                disabled=not accepted,
             ):
+                if not accepted:
+                    st.error("Devam etmek için bildirimi onaylamanız gerekir.")
+                    st.stop()
                 try:
                     log_consent(panel="app")
                 except Exception:
@@ -197,13 +234,13 @@ MedTriage, acil servis triaj sürecinde sağlık personeline karar destek sunmak
 
                 st.session_state.kvkk_accepted = True
                 st.session_state.kvkk_timestamp = datetime.now().isoformat()
-                st.session_state.app_step = "done"
+                st.session_state.app_step = "role"
                 st.rerun()
 
         # Alt dipnot
         st.markdown(
             '<div style="height:16px"></div>'
-            '<div style="font-family:var(--font-sans); font-size:0.72rem; '
+            '<div style="font-family:var(--font-sans); font-size:0.76rem; '
             'color:var(--color-ink-tertiary); text-align:center; line-height:1.6;">'
             'MedTriage — Portfolyo/Eğitim Prototipi · '
             'Bu sistem onaylı bir tıbbi cihaz değildir.'
@@ -214,21 +251,101 @@ MedTriage, acil servis triaj sürecinde sağlık personeline karar destek sunmak
 
 
 # ---------------------------------------------------------------------------
+# ROL SEÇİM EKRANI
+# ---------------------------------------------------------------------------
+def _render_role_selection() -> None:
+    """
+    Rol seçimi + ad girişi.
+
+    Bu bir kimlik doğrulama değildir (parola yok) ve öyleymiş gibi de
+    sunulmaz. Amacı iki eksiği kapatmak: panelleri role göre ayırmak ve
+    her klinik kararı bir isme bağlamak (denetim izi).
+    """
+    logo_html = _logo_img("logo-emblem.svg", width=44)
+    _, center_col, _ = st.columns([1, 4, 1])
+
+    with center_col:
+        st.markdown(
+            f"""
+<div style="background:var(--color-surface); border-radius:16px;
+     box-shadow:var(--shadow-card-hover); border-top:4px solid var(--color-brand);
+     border-left:1px solid var(--color-border); border-right:1px solid var(--color-border);
+     border-bottom:1px solid var(--color-border); padding:30px 34px 24px; margin-bottom:18px;">
+  <div style="display:flex; align-items:center; gap:14px; margin-bottom:8px;">
+    {logo_html}
+    <div>
+      <div style="font-family:var(--font-sans); font-size:1.18rem; font-weight:700;
+           color:var(--color-ink); letter-spacing:-0.01em;">Oturum Bilgileri</div>
+      <div style="font-family:var(--font-sans); font-size:0.8rem;
+           color:var(--color-ink-secondary);">Rolünüzü seçin ve adınızı girin.</div>
+    </div>
+  </div>
+</div>""",
+            unsafe_allow_html=True,
+        )
+
+        role_label = st.radio(
+            "Rol",
+            options=[ROLE_LABELS[r] for r in ROLES],
+            horizontal=True,
+            key="role_radio",
+        )
+        role = next(r for r in ROLES if ROLE_LABELS[r] == role_label)
+
+        name = st.text_input(
+            "Ad Soyad",
+            placeholder="Örn: Dr. Ayşe Yılmaz",
+            max_chars=80,
+            key="name_input",
+            help="Verdiğiniz kararlar bu adla denetim günlüğüne kaydedilir.",
+        )
+
+        st.markdown(
+            '<div style="font-family:var(--font-sans); font-size:0.78rem; '
+            'color:var(--color-ink-tertiary); line-height:1.55; margin:6px 0 14px;">'
+            'ℹ️ Bu ekran parola sormaz; prototip amaçlı basit bir rol ayrımıdır. '
+            'Gerçek kurulumda yerini kurumsal kimlik doğrulama (SSO) almalıdır.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+        # Buton BİLİNÇLİ OLARAK devre dışı bırakılmıyor: `disabled` bayrağı
+        # bir önceki çalıştırmanın `name` değerine bakar, dolayısıyla
+        # kullanıcı adını yazıp doğrudan tıkladığında ilk tıklama devre dışı
+        # butona düşüyor ve kayboluyordu — iki kez tıklamak gerekiyordu.
+        # Bunun yerine tıklama anında doğrulama yapıyoruz.
+        if st.button("Panele Giriş →", type="primary", use_container_width=True):
+            if not name.strip():
+                st.error("Devam etmek için adınızı girin.")
+            else:
+                st.session_state.user_role = role
+                st.session_state.user_name = name.strip()
+                st.session_state.app_step = "done"
+                st.rerun()
+
+
+# ---------------------------------------------------------------------------
 # ANA YÖNLENDIRME
 # ---------------------------------------------------------------------------
 step = st.session_state.app_step
 
-if step == "splash":
-    # ── SPLASH: Göster → 1.8sn bekle → KVKK'ya geç ──────────────────────
-    _render_splash()
-    time.sleep(1.8)
-    st.session_state.app_step = "kvkk"
-    st.rerun()
-
-elif step == "kvkk":
-    # ── KVKK: Onay formu ─────────────────────────────────────────────────
+if step in ("splash", "kvkk"):
+    # ── SPLASH + KVKK ────────────────────────────────────────────────────
+    # Splash, KVKK ekranının üstünde tam ekran bir katman olarak çizilir ve
+    # CSS animasyonuyla 1.6 sn sonra kendiliğinden söner. Eskiden ayrı bir
+    # adımdı ve time.sleep(1.8) ile bekletiliyordu; bu sunucu thread'ini
+    # bloke ediyordu. Artık zamanlama tarayıcıda, sunucu beklemiyor.
+    if step == "splash":
+        _render_splash()
+        st.session_state.app_step = "kvkk"
     _render_kvkk()
 
+elif step == "role":
+    # ── ROL: Rol seçimi + ad ─────────────────────────────────────────────
+    _render_role_selection()
+
 else:
-    # ── DONE: Triaj Kayıt Paneline yönlendir ─────────────────────────────
-    st.switch_page("pages/1_Triaj_Kayit.py")
+    # ── DONE: Rolün kendi paneline yönlendir ─────────────────────────────
+    st.switch_page(
+        ROLE_HOME.get(st.session_state.get("user_role"), "pages/1_Triaj_Kayit.py")
+    )

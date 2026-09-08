@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import sys
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import numpy as np
@@ -51,6 +51,8 @@ from shared.theme import (
 )
 from shared.header import render_header
 from shared.footer import render_footer
+from shared.auth import require_access, display_name, render_user_chip
+from shared.icons import icon
 
 logger = logging.getLogger(__name__)
 
@@ -68,17 +70,19 @@ _LANG: dict[str, dict[str, str]] = {
         "detail_title":     "Hasta Detayı",
         "waiting":          "dk bekliyor",
         "waiting_seconds":  "sn bekliyor",
+        "waiting_suffix":   "bekliyor",
+        "overdue":          "hedef süre aşıldı",
         "ai_suggestion":    "AI Triaj Önerisi",
         "red_flag_note":    "Model atlandı — Kural tabanlı acil uyarı tetiklendi",
         "similar_cases":    "Benzer Geçmiş Vakalar (KNN)",
         "similar_caption":  "Eğitim verisindeki en yakın 3 vaka · Öklid mesafesi · Tanı aracı değil, bağlamsal referans",
-        "approve_btn":      "✅  Onayla",
-        "override_btn":     "✏️  Geçersiz Kıl",
+        "approve_btn":      "Onayla",
+        "override_btn":     "Geçersiz Kıl",
         "override_note":    "Geçersiz Kılma Gerekçesi (zorunlu)",
         "override_placeholder": "Klinik gözlem, ek bulgu veya farklılık nedeninizi yazın...",
         "override_warning": "Geçersiz kılma gerekçesi boş bırakılamaz.",
-        "approve_ok":       "✅ Onaylandı ve kuyruktan kaldırıldı.",
-        "override_ok":      "✏️ Geçersiz kılındı ve karar günlüğüne eklendi.",
+        "approve_ok":       "Onaylandı ve kuyruktan kaldırıldı.",
+        "override_ok":      "Geçersiz kılındı ve karar günlüğüne eklendi.",
         "summary_title":    "Bugünkü Özet",
         "total_seen":       "Görülen Hasta",
         "approved_count":   "AI Onaylandı",
@@ -99,7 +103,7 @@ _LANG: dict[str, dict[str, str]] = {
         "mental_label":     "Mental",
         "ktas_col":         "KTAS",
         "dist_col":         "Benzerlik",
-        "refresh_btn":      "↻ Yenile",
+        "refresh_btn":      "Yenile",
         "model_missing":    "AI modeli yüklenemedi — yalnızca kural tabanlı uyarılar aktif.",
         "confidence":       "Model Güveni",
         "gender_m":         "Erkek",
@@ -110,8 +114,15 @@ _LANG: dict[str, dict[str, str]] = {
         "no_longer_queue":  "Bu hasta artık kuyrukta değil.",
         "recent_decisions": "Son Kararlar",
         "cancel_btn":       "İptal",
-        "save_btn":         "💾  Kaydet",
+        "save_btn":         "Kaydet",
         "karar_section":    "Karar",
+        "new_ktas":         "Düzeltilmiş KTAS Seviyesi",
+        "new_ktas_help":    "Hastaya atadığınız gerçek seviye. Bu değer modelin kalibrasyon takibinde kullanılır.",
+        "conf_unavailable": "Bu kayıt için model güveni saklanmamış (kural motoru kararı veya güven kaydı eklenmeden önceki kayıt).",
+        "conf_low":         "Model bu vakada kararsızdı",
+        "today_only":       "Yalnızca bugün",
+        "doctor_col":       "Hekim",
+        "doctor_ktas_col":  "Doktor KTAS",
     },
     "EN": {
         "page_title":       "Doctor Panel — MedTriage",
@@ -123,17 +134,19 @@ _LANG: dict[str, dict[str, str]] = {
         "detail_title":     "Patient Detail",
         "waiting":          "min waiting",
         "waiting_seconds":  "sec waiting",
+        "waiting_suffix":   "waiting",
+        "overdue":          "target time exceeded",
         "ai_suggestion":    "AI Triage Suggestion",
         "red_flag_note":    "Model skipped — Rule-based critical alert triggered",
         "similar_cases":    "Similar Historical Cases (KNN)",
         "similar_caption":  "Closest 3 cases from training data · Euclidean distance · Context only, not diagnostic",
-        "approve_btn":      "✅  Approve",
-        "override_btn":     "✏️  Override",
+        "approve_btn":      "Approve",
+        "override_btn":     "Override",
         "override_note":    "Override Reason (required)",
         "override_placeholder": "Describe your clinical observation or reason for override...",
         "override_warning": "Override reason cannot be empty.",
-        "approve_ok":       "✅ Approved and removed from queue.",
-        "override_ok":      "✏️ Overridden and logged to decision audit trail.",
+        "approve_ok":       "Approved and removed from queue.",
+        "override_ok":      "Overridden and logged to decision audit trail.",
         "summary_title":    "Today's Summary",
         "total_seen":       "Patients Seen",
         "approved_count":   "AI Approved",
@@ -154,7 +167,7 @@ _LANG: dict[str, dict[str, str]] = {
         "mental_label":     "Mental",
         "ktas_col":         "KTAS",
         "dist_col":         "Similarity",
-        "refresh_btn":      "↻ Refresh",
+        "refresh_btn":      "Refresh",
         "model_missing":    "AI model unavailable — only rule-based alerts active.",
         "confidence":       "Model Confidence",
         "gender_m":         "Male",
@@ -165,8 +178,15 @@ _LANG: dict[str, dict[str, str]] = {
         "no_longer_queue":  "This patient is no longer in the queue.",
         "recent_decisions": "Recent Decisions",
         "cancel_btn":       "Cancel",
-        "save_btn":         "💾  Save",
+        "save_btn":         "Save",
         "karar_section":    "Decision",
+        "new_ktas":         "Corrected KTAS Level",
+        "new_ktas_help":    "The level you actually assign. Used for model calibration tracking.",
+        "conf_unavailable": "No model confidence stored for this record (rule-engine decision, or recorded before confidence tracking).",
+        "conf_low":         "Model was uncertain on this case",
+        "today_only":       "Today only",
+        "doctor_col":       "Physician",
+        "doctor_ktas_col":  "Doctor KTAS",
     },
 }
 
@@ -182,15 +202,24 @@ st.set_page_config(
 )
 init_db()
 
+# Erişim kapısı — bu sayfada eskiden KVKK kontrolü HİÇ YOKTU; doktor
+# paneline URL ile doğrudan girilebiliyordu.
+require_access("doktor")
+
 if "lang"                not in st.session_state: st.session_state.lang                = "TR"
 if "selected_patient_id" not in st.session_state: st.session_state.selected_patient_id = None
-if "show_override_form"  not in st.session_state: st.session_state.show_override_form  = False
+if "override_for_patient" not in st.session_state: st.session_state.override_for_patient = None
 if "action_msg"          not in st.session_state: st.session_state.action_msg          = None
 
 
 def T(key: str) -> str:
     """Aktif dile göre çeviri döndürür."""
     return _LANG[st.session_state.lang].get(key, key)
+
+
+def lang_tr() -> bool:
+    """Aktif dil Türkçe mi?"""
+    return st.session_state.lang == "TR"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -207,9 +236,17 @@ def _load_bundle() -> dict | None:
 
 @st.cache_data(show_spinner=False)
 def _load_training_data() -> pd.DataFrame | None:
+    """
+    KNN benzer vaka karşılaştırması için eğitim verisi.
+
+    Burada impute=True kullanılır: mesafe hesabı tam vektör ister ve
+    imputasyonsuz veride 1267 satırın yalnızca 334'ü eksiksiz. Bu bir
+    görsel referans özelliğidir, model eğitimi değildir; dolayısıyla
+    doldurma sızıntı riski taşımaz.
+    """
     try:
         from data.load_ktas import load_ktas
-        return load_ktas()
+        return load_ktas(impute=True)
     except Exception:
         return None
 
@@ -227,9 +264,42 @@ def _waiting_minutes(timestamp_str: str) -> float:
 
 
 def _format_waiting(minutes: float) -> str:
+    """
+    Bekleme süresini okunabilir ölçekte biçimlendirir.
+
+    Eskiden her değer ham dakika olarak yazılıyordu; test kayıtlarında
+    "59274 dk bekliyor" gibi okunamaz çıktılar üretiyordu. Acil serviste
+    süre, büyüklüğüne göre sn / dk / sa / gün olarak okunmalıdır.
+    """
     if minutes < 1:
         return f"{int(minutes * 60)} {T('waiting_seconds')}"
-    return f"{int(minutes)} {T('waiting')}"
+    if minutes < 60:
+        return f"{int(minutes)} {T('waiting')}"
+    if minutes < 60 * 24:
+        hours, mins = divmod(int(minutes), 60)
+        tail = f" {mins} dk" if mins and lang_tr() else (f" {mins} min" if mins else "")
+        return f"{hours} {'sa' if lang_tr() else 'h'}{tail} {T('waiting_suffix')}"
+    days = int(minutes // (60 * 24))
+    hours = int((minutes % (60 * 24)) // 60)
+    tail = f" {hours} {'sa' if lang_tr() else 'h'}" if hours else ""
+    unit = "gün" if lang_tr() else "d"
+    return f"{days} {unit}{tail} {T('waiting_suffix')}"
+
+
+def _sla_status(ktas: int, waited_min: float) -> tuple[bool, float]:
+    """
+    Hastanın KTAS hedef süresini aşıp aşmadığını döndürür.
+
+    Eski kural `bekleme > 10 dk ve KTAS >= 3` idi: keyfi, ve KTAS hedef
+    süreleriyle hiç ilgisi yoktu. En acil hastalarda (KTAS 1-2) hiç
+    uyarı vermiyor, KTAS-5'te ise 10 dakikada uyarı veriyordu.
+
+    Döndürür: (hedef aşıldı mı, hedefin yüzde kaçı kullanıldı)
+    """
+    target = KTAS_CONFIG.get(ktas, KTAS_CONFIG[3]).get("target_min", 60)
+    if target <= 0:                      # KTAS-1: beklememeli
+        return waited_min > 0, 1.0
+    return waited_min > target, waited_min / target
 
 
 def _gender_label(gender_raw: str) -> str:
@@ -304,7 +374,9 @@ def _render_patient_card(p: dict, selected_id: int | None) -> bool:
     Tıklama butonu altta yer alır.
     """
     wait_min    = _waiting_minutes(p["timestamp"])
-    is_urgent   = wait_min > 10 and p["ai_priority"] >= 3
+    # Aciliyet artık KTAS hedef süresine göre belirlenir, keyfi bir
+    # eşiğe göre değil (bkz. _sla_status).
+    is_urgent, _ratio = _sla_status(p["ai_priority"], wait_min)
     is_selected = p["id"] == selected_id
     wait_txt    = _format_waiting(wait_min)
 
@@ -426,16 +498,25 @@ def _render_detail_panel(patient: dict) -> None:
             unsafe_allow_html=True,
         )
     else:
-        # Sahte result dict oluştur (ai_result_card_html için)
-        fake_result = {
-            "ktas_level":  ktas,
-            "confidence":  0.0,   # Kuyrukta saklı değil, 0 göster
-            "explanation": patient.get("ai_explanation", "—"),
-        }
+        # Model güveni artık kuyrukta saklanıyor. Eskiden burada sahte bir
+        # dict ile confidence=0.0 veriliyordu ve panel her hastada
+        # "Model Güveni: %0" gösteriyordu.
+        confidence = patient.get("ai_confidence")
         st.markdown(
-            ai_result_card_html(fake_result, lang=lang),
+            ai_result_card_html(
+                {
+                    "ktas_level":  ktas,
+                    "confidence":  confidence,   # None ise rozet gizlenir
+                    "explanation": patient.get("ai_explanation", "—"),
+                },
+                lang=lang,
+            ),
             unsafe_allow_html=True,
         )
+        if confidence is None:
+            st.caption(T("conf_unavailable"))  # eski kayıt / kural kararı
+        elif confidence < 0.40:
+            st.warning(f"{T('conf_low')} — %{confidence * 100:.0f}")
 
     # ── Benzer geçmiş vakalar (KNN) ───────────────────────────────────────
     st.markdown(section_label_html(T("similar_cases")), unsafe_allow_html=True)
@@ -449,20 +530,25 @@ def _render_detail_panel(patient: dict) -> None:
         st.info("Eğitim verisi yüklenemedi — benzer vaka karşılaştırması mevcut değil.")
 
     # ── Karar Butonları ───────────────────────────────────────────────────
-    st.markdown(section_label_html(f"⚖️  {T('karar_section')}"), unsafe_allow_html=True)
+    st.markdown(
+        section_label_html(
+            icon("scale", size=14, color="var(--color-brand)") + f"&nbsp;&nbsp;{T('karar_section')}"
+        ),
+        unsafe_allow_html=True,
+    )
 
     btn_col1, btn_col2 = st.columns(2)
     with btn_col1:
-        if st.button(T("approve_btn"), key=f"approve_{pid}",
+        if st.button(T("approve_btn"), key=f"approve_{pid}", icon=":material/check:",
                      use_container_width=True, type="primary"):
             _handle_approve(patient)
 
     with btn_col2:
-        if st.button(T("override_btn"), key=f"override_btn_{pid}",
+        if st.button(T("override_btn"), key=f"override_btn_{pid}", icon=":material/edit:",
                      use_container_width=True, type="secondary"):
-            st.session_state.show_override_form = True
+            st.session_state.override_for_patient = pid
 
-    if st.session_state.get("show_override_form"):
+    if st.session_state.get("override_for_patient") == pid:
         _render_override_form(patient)
 
 
@@ -477,10 +563,13 @@ def _handle_approve(patient: dict) -> None:
             ai_suggestion   = patient["ai_priority"],
             doctor_decision = "onaylandı",
             doctor_note     = "",
+            # Onay = AI önerisini aynen kabul etmek
+            doctor_ktas     = patient["ai_priority"],
+            doctor_name     = display_name(),
         )
         update_patient_status(pid, "görüldü")
         st.session_state.selected_patient_id = None
-        st.session_state.show_override_form  = False
+        st.session_state.override_for_patient = None
         st.session_state.action_msg = ("success", T("approve_ok"))
         st.rerun()
     except Exception as e:
@@ -496,21 +585,40 @@ def _render_override_form(patient: dict) -> None:
     )
 
     # Geçersiz kılma kutusu — belirgin ama agresif değil
+    warn_icon = icon("alert-triangle", size=15, color="var(--color-warning-text)")
     st.markdown(
         f"""
 <div style="
-    background:rgba(255,149,0,0.05);
+    background:rgba(198,106,0,0.06);
     border-left:4px solid var(--color-warning);
     border-radius:0 var(--radius-alert) var(--radius-alert) 0;
     padding:16px 20px;
     margin-bottom:16px;
     font-family:var(--font-sans);font-size:0.82rem;
-    color:#7A4500;line-height:1.5;
+    color:var(--color-warning-text);line-height:1.55;
 ">
-    <strong>⚠️ Geçersiz Kılma</strong> — AI önerisi reddedilecek.
+    <strong>{warn_icon} Geçersiz Kılma</strong> — AI önerisi reddedilecek.
     Klinik gerekçenizi aşağıya yazın. Bu kayıt denetim günlüğüne eklenir.
 </div>""",
         unsafe_allow_html=True,
+    )
+
+    # Doktorun ATADIĞI seviye. Bu alan olmadan denetim günlüğü "AI 3 dedi,
+    # doktor itiraz etti" demekten öteye gidemiyordu; hangi seviyeye
+    # düzeltildiği hiçbir yerde saklanmıyordu ve model kalibrasyonu
+    # ölçülemiyordu.
+    levels = sorted(KTAS_CONFIG.keys())
+    current = patient["ai_priority"]
+    new_ktas = st.selectbox(
+        T("new_ktas"),
+        options=levels,
+        index=levels.index(current) if current in levels else 2,
+        format_func=lambda k: (
+            f"KTAS-{k} — {KTAS_CONFIG[k]['label_tr' if lang_tr() else 'label_en']}"
+            f" ({KTAS_CONFIG[k]['sub_tr' if lang_tr() else 'sub_en']})"
+        ),
+        key=f"override_ktas_{pid}",
+        help=T("new_ktas_help"),
     )
 
     reason = st.text_area(
@@ -521,10 +629,18 @@ def _render_override_form(patient: dict) -> None:
     )
     col_save, col_cancel = st.columns(2)
     with col_save:
-        if st.button(T("save_btn"), key=f"save_override_{pid}",
+        if st.button(T("save_btn"), key=f"save_override_{pid}", icon=":material/save:",
                      use_container_width=True, type="primary"):
             if not reason.strip():
                 st.error(T("override_warning"))
+            elif new_ktas == patient["ai_priority"]:
+                st.error(
+                    "Geçersiz kılma için AI önerisinden farklı bir seviye seçin. "
+                    "Aynı seviyede kalacaksanız 'Onayla' kullanın."
+                    if lang_tr() else
+                    "Choose a level different from the AI suggestion, "
+                    "or use 'Approve' instead."
+                )
             else:
                 try:
                     log_decision(
@@ -532,10 +648,12 @@ def _render_override_form(patient: dict) -> None:
                         ai_suggestion   = patient["ai_priority"],
                         doctor_decision = "geçersiz kılındı",
                         doctor_note     = reason.strip(),
+                        doctor_ktas     = int(new_ktas),
+                        doctor_name     = display_name(),
                     )
                     update_patient_status(pid, "görüldü")
                     st.session_state.selected_patient_id = None
-                    st.session_state.show_override_form  = False
+                    st.session_state.override_for_patient = None
                     st.session_state.action_msg = ("info", T("override_ok"))
                     st.rerun()
                 except Exception as e:
@@ -543,7 +661,7 @@ def _render_override_form(patient: dict) -> None:
     with col_cancel:
         if st.button(T("cancel_btn"), key=f"cancel_override_{pid}",
                      use_container_width=True):
-            st.session_state.show_override_form = False
+            st.session_state.override_for_patient = None
             st.rerun()
 
 
@@ -555,15 +673,19 @@ def _render_daily_summary() -> None:
     st.markdown(
         f'<div style="font-family:var(--font-sans);font-size:1rem;font-weight:600;'
         f'color:var(--color-ink);margin-bottom:20px;letter-spacing:-0.01em;">'
-        f'📈 &nbsp; {T("summary_title")}</div>',
+        f'{icon("trending-up", size=16, color="var(--color-brand)")} &nbsp; {T("summary_title")} '
+        f'<span style="font-size:0.75rem;font-weight:400;'
+        f'color:var(--color-ink-tertiary);">· {T("today_only")}</span></div>',
         unsafe_allow_html=True,
     )
 
-    stats         = get_override_statistics()
+    # "Bugünkü Özet" başlığı tüm zamanların toplamını gösteriyordu.
+    today         = date.today().isoformat()
+    stats         = get_override_statistics(since=today)
     approved      = stats["approved"]
     override      = stats["overridden"]
     rate          = stats["override_rate"]
-    seen_patients = len(get_queue(status_filter="görüldü"))
+    seen_patients = len(get_queue(status_filter="görüldü", since=today))
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric(T("total_seen"),       seen_patients)
@@ -576,21 +698,46 @@ def _render_daily_summary() -> None:
 
     # Son kararlar tablosu
     logs = get_decision_log()[:5]
+    if not logs:
+        # Boş durum: başlık görünüp altının tamamen boş kalması, kullanıcıya
+        # "bir şey mi bozuldu?" dedirtiyordu. Boş olmak da bir durumdur ve
+        # açıkça söylenmelidir.
+        empty_msg = (
+            "Bugün henüz karar kaydedilmedi. Bir hastayı onayladığınızda veya "
+            "geçersiz kıldığınızda kayıtlar burada görünür."
+            if lang_tr() else
+            "No decisions recorded yet today. Approved or overridden cases "
+            "will appear here."
+        )
+        st.markdown(
+            f'<div style="display:flex;align-items:center;gap:10px;'
+            f'background:var(--color-surface);border:1px dashed var(--color-border);'
+            f'border-radius:12px;padding:18px 20px;margin-top:22px;'
+            f'font-family:var(--font-sans);font-size:0.84rem;'
+            f'color:var(--color-ink-secondary);">'
+            f'{icon("inbox", size=18, color="var(--color-ink-tertiary)")}'
+            f'<span>{empty_msg}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
     if logs:
         st.markdown(
-            f'<div style="font-family:var(--font-sans);font-size:0.72rem;'
+            f'<div style="font-family:var(--font-sans);font-size:0.76rem;'
             f'font-weight:500;text-transform:uppercase;letter-spacing:0.08em;'
             f'color:var(--color-ink-secondary);margin:24px 0 12px;">'
             f'{T("recent_decisions")}</div>',
             unsafe_allow_html=True,
         )
         log_df = pd.DataFrame(logs)[
-            ["timestamp", "patient_id", "ai_suggestion", "doctor_decision", "doctor_note"]
+            ["timestamp", "patient_id", "ai_suggestion", "doctor_ktas",
+             "doctor_decision", "doctor_name", "doctor_note"]
         ].rename(columns={
             "timestamp":       "Zaman",
             "patient_id":      "Hasta #",
             "ai_suggestion":   "AI Öneri",
+            "doctor_ktas":     T("doctor_ktas_col"),
             "doctor_decision": "Doktor Kararı",
+            "doctor_name":     T("doctor_col"),
             "doctor_note":     "Not",
         })
         log_df = log_df.iloc[::-1].reset_index(drop=True)
@@ -613,6 +760,12 @@ def main() -> None:
             brand_header_html(T("page_label")),
             unsafe_allow_html=True,
         )
+    with h_col:
+        chip = render_user_chip()
+        if chip:
+            st.markdown(f'<div style="margin:-8px 0 4px;">{chip}</div>',
+                        unsafe_allow_html=True)
+
     with lang_col:
         st.markdown("<div style='margin-top:20px'></div>", unsafe_allow_html=True)
         lang_choice = st.selectbox(
@@ -620,19 +773,23 @@ def main() -> None:
             options=["TR", "EN"],
             index=0 if st.session_state.lang == "TR" else 1,
             key="lang_select",
-            label_visibility="collapsed",
+            label_visibility="visible",
         )
         if lang_choice != st.session_state.lang:
             st.session_state.lang = lang_choice
             st.rerun()
     with refresh_col:
         st.markdown("<div style='margin-top:20px'></div>", unsafe_allow_html=True)
-        if st.button(T("refresh_btn"), use_container_width=True, type="secondary"):
+        if st.button(T("refresh_btn"), icon=":material/refresh:",
+                     use_container_width=True, type="secondary"):
             st.rerun()
 
     # ── Sabit uyarı şeridi ────────────────────────────────────────────────
     st.markdown(
-        disclaimer_bar_html(f"⚠️  {T('disclaimer')}"),
+        disclaimer_bar_html(
+            icon("alert-triangle", size=15, color="#6B3D00")
+            + f"&nbsp;&nbsp;{T('disclaimer')}"
+        ),
         unsafe_allow_html=True,
     )
 
@@ -659,31 +816,32 @@ def main() -> None:
     with left_col:
         # Kuyruk başlığı + sayaç rozeti
         st.markdown(
-            f'<div style="font-family:var(--font-sans);font-size:0.72rem;'
+            f'<div style="font-family:var(--font-sans);font-size:0.76rem;'
             f'font-weight:500;text-transform:uppercase;letter-spacing:0.08em;'
             f'color:var(--color-ink-secondary);margin-bottom:14px;'
             f'display:flex;align-items:center;gap:8px;">'
             f'{T("queue_title")} &nbsp;'
             f'<span style="background:rgba(122,31,43,0.10);color:var(--color-brand);'
-            f'border-radius:999px;padding:2px 10px;font-size:11px;font-weight:700;">'
+            f'border-radius:999px;padding:2px 10px;font-size:12px;font-weight:700;">'
             f'{len(queue)}</span></div>',
             unsafe_allow_html=True,
         )
 
         if not queue:
             st.markdown(
-                f'<div style="background:rgba(52,199,89,0.07);'
+                f'<div style="background:rgba(18,165,148,0.09);'
                 f'border-left:4px solid var(--color-safe);'
                 f'border-radius:0 12px 12px 0;padding:18px 20px;'
-                f'font-family:var(--font-sans);font-size:0.85rem;color:#1A7D3F;">'
-                f'✅ {T("no_patients")}</div>',
+                f'font-family:var(--font-sans);font-size:0.85rem;color:var(--color-safe-text);display:flex;align-items:center;">'
+                f'{icon("check-circle", size=16, color="var(--color-safe-text)")}'
+                f'&nbsp;&nbsp;{T("no_patients")}</div>',
                 unsafe_allow_html=True,
             )
         else:
             for p in queue:
                 if _render_patient_card(p, st.session_state.selected_patient_id):
                     st.session_state.selected_patient_id = p["id"]
-                    st.session_state.show_override_form  = False
+                    st.session_state.override_for_patient = None
                     st.rerun()
 
     with right_col:
@@ -724,18 +882,14 @@ def main() -> None:
                 st.info(T("no_longer_queue"))
                 st.session_state.selected_patient_id = None
             else:
-                # Detay paneli: beyaz kart içinde
-                st.markdown(
-                    '<div style="'
-                    'background:var(--color-surface);'
-                    'border-radius:var(--radius-card);'
-                    'box-shadow:var(--shadow-card);'
-                    'padding:28px 32px;'
-                    'border:none;">',
-                    unsafe_allow_html=True,
-                )
-                _render_detail_panel(patient)
-                st.markdown("</div>", unsafe_allow_html=True)
+                # Detay paneli beyaz bir kart içinde durur. Kart,
+                # `st.container(border=True)` ile kurulur — markdown ile
+                # açılan bir <div> sonraki widget'ları saramaz (Streamlit
+                # her markdown çıktısını kendi kapsayıcısına alır ve açık
+                # etiketi kapatır), bu yüzden eskiden içi boş bir beyaz
+                # kutu çiziliyor, detaylar kutunun dışında kalıyordu.
+                with st.container(border=True):
+                    _render_detail_panel(patient)
 
     # ── Günlük özet ───────────────────────────────────────────────────────
     st.markdown(
@@ -748,5 +902,7 @@ def main() -> None:
     render_footer()
 
 
-if __name__ == "__main__" or True:
-    main()
+# Streamlit her sayfayı doğrudan çalıştırır; koşula gerek yok.
+# (Eskiden burada her zaman doğru olan `__name__ == "__main__" or True`
+#  kalıbı vardı.)
+main()

@@ -34,36 +34,6 @@ logger = logging.getLogger(__name__)
 _DEFAULT_DB_PATH = Path(__file__).parent.parent / "data" / "medtriage.db"
 
 
-def log_consent(panel: str = "app", db_path: Path | str | None = None) -> int:
-    """
-    KVKK/Gizlilik onay kaydını veritabanına ekler.
-
-    Parametreler
-    ------------
-    panel : str
-        Onayın yapıldığı panel veya sayfa (varsayılan: 'app').
-    db_path : Path | str | None
-        DB yolu.
-
-    Döndürür
-    --------
-    int
-        Oluşturulan consent_log kaydının id'si.
-    """
-    db_path = Path(db_path) if db_path else _DEFAULT_DB_PATH
-    init_db(db_path)
-    now_iso = datetime.now().isoformat()
-    with _get_conn(db_path) as conn:
-        cursor = conn.execute(
-            """
-            INSERT INTO consent_log (timestamp, panel)
-            VALUES (?, ?)
-            """,
-            (now_iso, panel),
-        )
-        return cursor.lastrowid
-
-
 # ---------------------------------------------------------------------------
 # Yardımcı: bağlantı yöneticisi
 # ---------------------------------------------------------------------------
@@ -90,6 +60,38 @@ def _get_conn(db_path: Path) -> Generator[sqlite3.Connection, None, None]:
 # ---------------------------------------------------------------------------
 # Tablo oluşturma
 # ---------------------------------------------------------------------------
+
+# Sonradan eklenen sütunlar. Mevcut veritabanları ALTER TABLE ile
+# yerinde yükseltilir; veri kaybı olmaz.
+_SCHEMA_ADDITIONS: dict[str, list[tuple[str, str]]] = {
+    "patient_queue": [
+        # Model güveni kaydedilmiyordu; doktor paneli bu yüzden
+        # "Model Güveni: %0" gösteriyordu.
+        ("ai_confidence", "REAL"),
+        # Kanonik semptom kodu (shared/symptoms.py)
+        ("symptom_code", "TEXT"),
+        # Kırmızı bayrak kuralının önerdiği seviye (hepsi KTAS-1 değil)
+        ("rule_ktas", "INTEGER"),
+    ],
+    "decision_log": [
+        # Doktorun DÜZELTTİĞİ seviye. Bu sütun olmadan "AI ne dedi, doktor
+        # ne dedi" karşılaştırması yapılamaz; kalibrasyon takibi imkânsızdır.
+        ("doctor_ktas", "INTEGER"),
+        # Aktörsüz denetim izi denetim izi değildir.
+        ("doctor_name", "TEXT"),
+    ],
+}
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Eksik sütunları ekler. Zaten varsa dokunmaz (idempotent)."""
+    for table, columns in _SCHEMA_ADDITIONS.items():
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for name, coltype in columns:
+            if name not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {coltype}")
+                logger.info("Şema güncellendi: %s.%s eklendi", table, name)
+
 
 def init_db(db_path: Path | str | None = None) -> Path:
     """
@@ -172,8 +174,59 @@ def init_db(db_path: Path | str | None = None) -> Path:
             ON decision_log(patient_id)
         """)
 
+        # Mevcut veritabanlarını yeni sütunlarla uyumlu hale getir
+        _migrate(conn)
+
     logger.info(f"Veritabanı hazır: {db_path}")
     return db_path
+
+
+# ---------------------------------------------------------------------------
+# Demo verisi yönetimi
+# ---------------------------------------------------------------------------
+
+def reset_demo_data(db_path: Path | str | None = None) -> dict:
+    """
+    Hasta kuyruğunu ve karar günlüğünü temizler.
+
+    NEDEN VAR?
+    ----------
+    Bu bir portfolyo/demo uygulaması. SQLite dosyası diskte kalıcı olduğu
+    için önceki oturumlarda girilen test hastaları uygulama her açıldığında
+    kuyrukta görünmeye devam ediyordu — "41 gün 4 sa bekliyor" gibi anlamsız
+    kayıtlar. Demo'yu gösteren kişi her seferinde bunları elle silmek
+    zorunda kalıyordu.
+
+    Sunucu her başladığında bir kez çağrılır (bkz. app.py). Oturum içinde
+    girilen hastalar korunur; yalnızca sunucu yeniden başladığında sıfırlanır.
+
+    consent_log KORUNUR: KVKK onayları hesap verebilirlik kaydıdır, arayüzde
+    listelenmediği için demo'yu kirletmez ve silinmesi için bir sebep yoktur.
+
+    Kimlik sayaçları da sıfırlanır; böylece her demo #1'den başlar.
+
+    Döndürür
+    --------
+    dict
+        Silinen kayıt sayıları: {"patients": int, "decisions": int}
+    """
+    db_path = _resolve_db(db_path)
+    with _get_conn(db_path) as conn:
+        patients = conn.execute("SELECT COUNT(*) FROM patient_queue").fetchone()[0]
+        decisions = conn.execute("SELECT COUNT(*) FROM decision_log").fetchone()[0]
+
+        conn.execute("DELETE FROM decision_log")
+        conn.execute("DELETE FROM patient_queue")
+        # AUTOINCREMENT sayaçlarını sıfırla — demo #1'den başlasın
+        conn.execute(
+            "DELETE FROM sqlite_sequence WHERE name IN ('patient_queue', 'decision_log')"
+        )
+
+    if patients or decisions:
+        logger.info(
+            "Demo verisi sıfırlandı: %d hasta, %d karar silindi", patients, decisions
+        )
+    return {"patients": patients, "decisions": decisions}
 
 
 # ---------------------------------------------------------------------------
@@ -188,6 +241,9 @@ def add_patient(
     ai_priority: int,
     ai_explanation: str,
     red_flag: bool,
+    ai_confidence: float | None = None,
+    symptom_code: str | None = None,
+    rule_ktas: int | None = None,
     db_path: Path | str | None = None,
 ) -> int:
     """
@@ -209,6 +265,13 @@ def add_patient(
         AI'ın Türkçe gerekçe açıklaması.
     red_flag : bool
         Kırmızı bayrak tetiklendi mi?
+    ai_confidence : float | None
+        Modelin kalibre edilmiş güven skoru (0-1). Kırmızı bayrak
+        vakalarında model çalışmadığı için None'dır.
+    symptom_code : str | None
+        shared/symptoms.py kanonik semptom kodu.
+    rule_ktas : int | None
+        Kırmızı bayrak kuralının önerdiği seviye (varsa).
     db_path : Path | str | None
         Veritabanı yolu (None ise varsayılan).
 
@@ -225,12 +288,14 @@ def add_patient(
             """
             INSERT INTO patient_queue
                 (timestamp, age, gender, chief_complaint, vitals,
-                 ai_priority, ai_explanation, red_flag, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'bekliyor')
+                 ai_priority, ai_explanation, red_flag, status,
+                 ai_confidence, symptom_code, rule_ktas)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'bekliyor', ?, ?, ?)
             """,
             (now, age, gender, chief_complaint,
              json.dumps(vitals, ensure_ascii=False),
-             ai_priority, ai_explanation, int(red_flag)),
+             ai_priority, ai_explanation, int(red_flag),
+             ai_confidence, symptom_code, rule_ktas),
         )
         patient_id = cursor.lastrowid
 
@@ -241,6 +306,7 @@ def add_patient(
 
 def get_queue(
     status_filter: str | None = "bekliyor",
+    since: str | None = None,
     db_path: Path | str | None = None,
 ) -> list[dict]:
     """
@@ -250,6 +316,10 @@ def get_queue(
     ------------
     status_filter : str | None
         Filtre: 'bekliyor', 'görüldü', 'transfer edildi', veya None (tümü).
+    since : str | None
+        ISO tarih/zaman öneki (ör. '2026-09-08'). Verilirse yalnızca bu
+        andan sonraki kayıtlar döner. "Bugünkü özet" için gereklidir —
+        aksi halde tüm zamanların toplamı gösterilir.
     db_path : Path | str | None
         Veritabanı yolu.
 
@@ -261,23 +331,21 @@ def get_queue(
     """
     db_path = _resolve_db(db_path)
 
+    clauses, params = [], []
+    if status_filter:
+        clauses.append("status = ?")
+        params.append(status_filter)
+    if since:
+        clauses.append("timestamp >= ?")
+        params.append(since)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+
     with _get_conn(db_path) as conn:
-        if status_filter:
-            rows = conn.execute(
-                """
-                SELECT * FROM patient_queue
-                WHERE status = ?
-                ORDER BY ai_priority ASC, timestamp ASC
-                """,
-                (status_filter,),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                """
-                SELECT * FROM patient_queue
-                ORDER BY ai_priority ASC, timestamp ASC
-                """
-            ).fetchall()
+        rows = conn.execute(
+            f"SELECT * FROM patient_queue {where} "
+            f"ORDER BY ai_priority ASC, timestamp ASC",
+            params,
+        ).fetchall()
 
     result = []
     for row in rows:
@@ -379,6 +447,8 @@ def log_decision(
     ai_suggestion: int,
     doctor_decision: str,
     doctor_note: str = "",
+    doctor_ktas: int | None = None,
+    doctor_name: str = "",
     db_path: Path | str | None = None,
 ) -> int:
     """
@@ -398,6 +468,11 @@ def log_decision(
         Doktorun kararı: 'onaylandı' veya 'geçersiz kılındı'.
     doctor_note : str
         Doktorun gerekçesi veya ek notu (isteğe bağlı).
+    doctor_ktas : int | None
+        Doktorun atadığı KTAS seviyesi. Geçersiz kılmada ZORUNLUDUR —
+        yoksa "AI ne önerdi, doktor ne dedi" karşılaştırması yapılamaz.
+    doctor_name : str
+        Kararı veren hekim. Denetim izinin aktörü.
     db_path : Path | str | None
         Veritabanı yolu.
 
@@ -418,10 +493,12 @@ def log_decision(
         cursor = conn.execute(
             """
             INSERT INTO decision_log
-                (patient_id, ai_suggestion, doctor_decision, doctor_note, timestamp)
-            VALUES (?, ?, ?, ?, ?)
+                (patient_id, ai_suggestion, doctor_decision, doctor_note,
+                 timestamp, doctor_ktas, doctor_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (patient_id, ai_suggestion, doctor_decision, doctor_note, now),
+            (patient_id, ai_suggestion, doctor_decision, doctor_note, now,
+             doctor_ktas, doctor_name),
         )
         log_id = cursor.lastrowid
 
@@ -467,13 +544,18 @@ def get_decision_log(
     return [dict(row) for row in rows]
 
 
-def get_override_statistics(db_path: Path | str | None = None) -> dict:
+def get_override_statistics(
+    since: str | None = None,
+    db_path: Path | str | None = None,
+) -> dict:
     """
     AI kararlarının doktor tarafından kaç kez onaylandığı / geçersiz kılındığı
     istatistiğini döndürür. Model kalibrasyon takibi için kullanılır.
 
     Parametreler
     ------------
+    since : str | None
+        ISO tarih öneki; verilirse yalnızca o andan sonraki kararlar sayılır.
     db_path : Path | str | None
         Veritabanı yolu.
 
@@ -488,14 +570,15 @@ def get_override_statistics(db_path: Path | str | None = None) -> dict:
         }
     """
     db_path = _resolve_db(db_path)
+    where, params = ("WHERE timestamp >= ?", [since]) if since else ("", [])
     with _get_conn(db_path) as conn:
-        row = conn.execute("""
+        row = conn.execute(f"""
             SELECT
                 COUNT(*) as total,
                 SUM(CASE WHEN doctor_decision='onaylandı' THEN 1 ELSE 0 END) as approved,
                 SUM(CASE WHEN doctor_decision='geçersiz kılındı' THEN 1 ELSE 0 END) as overridden
-            FROM decision_log
-        """).fetchone()
+            FROM decision_log {where}
+        """, params).fetchone()
 
     total = row["total"] or 0
     approved = row["approved"] or 0

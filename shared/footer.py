@@ -61,7 +61,7 @@ def render_footer() -> None:
 <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:20px; margin-bottom:16px;">
 <div>
 {wordmark_html}
-<div style="font-size:0.72rem; color:var(--color-ink-tertiary); margin-top:6px; letter-spacing:0.01em;">© 2026 MedTriage — Tüm hakları saklıdır</div>
+<div style="font-size:0.76rem; color:var(--color-ink-tertiary); margin-top:6px; letter-spacing:0.01em;">© 2026 MedTriage — Tüm hakları saklıdır</div>
 </div>
 <div style="display:flex; gap:28px; align-items:center; flex-wrap:wrap;">
 <span style="color:var(--color-ink-secondary); font-size:0.78rem;">Gizlilik Politikası</span>
@@ -70,7 +70,7 @@ def render_footer() -> None:
 <span style="color:var(--color-ink-secondary); font-size:0.78rem;">Hakkında</span>
 </div>
 </div>
-<div style="font-size:0.7rem; color:var(--color-ink-tertiary); line-height:1.65; padding-top:14px; border-top:1px solid var(--color-border); max-width:900px;">
+<div style="font-size:0.75rem; color:var(--color-ink-tertiary); line-height:1.65; padding-top:14px; border-top:1px solid var(--color-border); max-width:900px;">
 MedTriage bir tıbbi tanı aracı değildir; yalnızca acil servis sağlık personeline karar destek önerisi sunar. Nihai triaj kararı her zaman yetkili sağlık personelinin sorumluluğundadır. Bu sistem bir portfolyo / eğitim prototipidir ve onaylı bir tıbbi cihaz değildir.
 <span style="opacity:0.6; margin-left:8px;">KTAS Veri Seti · XGBoost · SHAP · Streamlit</span>
 </div>

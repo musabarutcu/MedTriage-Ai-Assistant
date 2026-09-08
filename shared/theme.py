@@ -25,7 +25,7 @@ KRİTİK RENK AYIRIMI — ASLA KARIŞTIRMA
                                → Butonlar, wordmark, logo, başlık aksanı
                                → Öncelik rozetlerinde KESİNLİKLE kullanılmaz
 
-  --color-critical (#FF3B30) : SADECE klinik aciliyet sinyali
+  --color-critical (#E02418) : SADECE klinik aciliyet sinyali
                                → KTAS-1 rozeti, kırmızı bayrak uyarısı
                                → Marka / buton renginde KESİNLİKLE kullanılmaz
 
@@ -64,47 +64,57 @@ _GOOGLE_FONTS_URL = (
 KTAS_CONFIG: dict[int, dict] = {
     1: {
         "emoji":    "●",
-        "color":    "#FF3B30",              # --color-critical — YALNIZCA KTAS-1
-        "bg":       "rgba(255,59,48,0.10)",
+        "color":    "#E02418",              # dolgu — YALNIZCA KTAS-1
+        "text":     "#8E0000",              # metin-güvenli varyant (9.77:1)
+        "bg":       "rgba(224,36,24,0.10)",
         "label_tr": "Resüsitasyon",
         "label_en": "Resuscitation",
         "sub_tr":   "Hemen",
+        "target_min": 0,      # resüsitasyon — bekleme yok
         "sub_en":   "Immediately",
     },
     2: {
         "emoji":    "●",
-        "color":    "#FF9500",              # --color-warning
-        "bg":       "rgba(255,149,0,0.12)",
+        "color":    "#C66A00",              # dolgu
+        "text":     "#8F3D00",              # metin-güvenli varyant (7.41:1)
+        "bg":       "rgba(198,106,0,0.12)",
         "label_tr": "Acil",
         "label_en": "Emergent",
         "sub_tr":   "≤15 dk",
+        "target_min": 15,
         "sub_en":   "≤15 min",
     },
     3: {
         "emoji":    "●",
-        "color":    "#8B6914",              # Koyu sarı (WCAG AA kontrast için)
-        "bg":       "rgba(255,204,0,0.15)",
+        "color":    "#BD8C37",              # dolgu
+        "text":     "#7F7200",              # metin-güvenli varyant (4.87:1)
+        "bg":       "rgba(189,140,55,0.18)",
         "label_tr": "Acil-Değil",
         "label_en": "Urgent",
         "sub_tr":   "≤60 dk",
+        "target_min": 60,
         "sub_en":   "≤60 min",
     },
     4: {
         "emoji":    "●",
-        "color":    "#1A7D3F",              # --color-safe koyu tonu
-        "bg":       "rgba(52,199,89,0.10)",
+        "color":    "#12A594",              # dolgu
+        "text":     "#0A6157",              # metin-güvenli varyant (7.34:1)
+        "bg":       "rgba(18,165,148,0.12)",
         "label_tr": "Az Acil",
         "label_en": "Less Urgent",
         "sub_tr":   "≤120 dk",
+        "target_min": 120,
         "sub_en":   "≤120 min",
     },
     5: {
         "emoji":    "●",
-        "color":    "#004BB5",              # --color-info koyu tonu (WCAG AA)
-        "bg":       "rgba(0,113,227,0.10)",
+        "color":    "#3B6FD4",              # dolgu
+        "text":     "#1F3F9E",              # metin-güvenli varyant (9.28:1)
+        "bg":       "rgba(59,111,212,0.11)",
         "label_tr": "Acil Değil",
         "label_en": "Non-Urgent",
         "sub_tr":   "≤240 dk",
+        "target_min": 240,
         "sub_en":   "≤240 min",
     },
 }
@@ -154,16 +164,33 @@ def _root_css() -> str:
     /* ── Klinik Öncelik Renkleri ──────────────────────────────────── */
     /* --color-critical: SADECE KTAS-1 rozeti ve kırmızı bayrak       */
     /* MARKA / BUTON renginde KESİNLİKLE KULLANILMAZ                  */
-    --color-critical:  #FF3B30;
-    --color-warning:   #FF9500;
-    --color-caution:   #FFCC00;
-    --color-safe:      #34C759;
-    --color-info:      #0071E3;
+    /*                                                                */
+    /* DOLGU vs METİN AYRIMI — önemli:                                */
+    /* Aşağıdaki canlı tonlar DOLGU, KENARLIK ve İKON içindir.        */
+    /* Metin olarak kullanıldıklarında WCAG 4.5:1 eşiğini geçmezler   */
+    /* (ölçüldü: warning 2.20, safe 2.04, caution 1.51, critical 3.55)*/
+    /* Bu yüzden her birinin bir "-text" varyantı vardır. Renkli      */
+    /* METİN yazarken DAİMA -text varyantını kullanın.                */
+    --color-critical:  #E02418;
+    --color-warning:   #C66A00;
+    --color-caution:   #BD8C37;
+    --color-safe:      #12A594;
+    --color-info:      #3B6FD4;
+
+    /* Metin-güvenli varyantlar — hepsi beyaz ve kanvas üzerinde ≥4.5:1 */
+    --color-critical-text: #8E0000;   /* 9.77 : 1 */
+    --color-warning-text:  #8F3D00;   /* 7.41 : 1 */
+    --color-caution-text:  #7F7200;   /* 4.87 : 1 */
+    --color-safe-text:     #0A6157;   /* 7.34 : 1 */
+    --color-info-text:     #1F3F9E;   /* 9.28 : 1 */
 
     /* ── Metinler ─────────────────────────────────────────────────── */
-    --color-ink:           #1D1D1F;
-    --color-ink-secondary: #6E6E73;
-    --color-ink-tertiary:  #AEAEB2;
+    /* ink-tertiary eskiden #AEAEB2 idi ve kanvas üzerinde 2.03:1      */
+    /* veriyordu — dipnotlar, bekleme süreleri ve boş durum metinleri  */
+    /* okunamıyordu. Hiyerarşi korunarak üç kademe de eşiği geçiyor.   */
+    --color-ink:           #1D1D1F;   /* 16.1 : 1 */
+    --color-ink-secondary: #55555A;   /* 7.41 : 1 */
+    --color-ink-tertiary:  #6E6E73;   /* 5.07 : 1 */
 
     /* ── Yüzeyler ─────────────────────────────────────────────────── */
     --color-surface:      #FFFFFF;
@@ -223,15 +250,6 @@ footer { display: none !important; }
 section[data-testid="stSidebar"]  { display: none !important; }
 
 /* ── Form container (kart görünümü) ──────────────────────────── */
-.form-section-card {
-    background: var(--color-surface) !important;
-    border-radius: var(--radius-card) !important;
-    box-shadow: var(--shadow-card) !important;
-    padding: 32px 36px !important;
-    border: 1px solid var(--color-border) !important;
-    margin-bottom: 36px !important;
-}
-
 [data-testid="stForm"] {
     background: var(--color-surface) !important;
     border-radius: var(--radius-card) !important;
@@ -311,15 +329,29 @@ hr {
     from { opacity: 0; transform: scale(0.92) translateY(10px); }
     to   { opacity: 1; transform: scale(1)    translateY(0px);  }
 }
+/* Splash artık KVKK ekranının ÜSTÜNDE duran, kendiliğinden sönen bir
+   katmandır. Eskiden ayrı bir adımdı ve time.sleep(1.8) ile bekletiliyordu;
+   bu sunucu thread'ini bloke ediyor, eşzamanlı kullanıcılarda beklemeler
+   üst üste biniyordu. Artık zamanlama tamamen tarayıcıda, CSS ile.        */
 .splash-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-height: 78vh;
     text-align: center;
-    background: linear-gradient(160deg, var(--color-canvas) 0%, rgba(122,31,43,0.04) 100%);
-    border-radius: var(--radius-card);
+    background: linear-gradient(160deg, var(--color-canvas) 0%, rgba(122,31,43,0.06) 100%);
+    animation: splashOut 0.5s ease-in 1.6s forwards;
+}
+@keyframes splashOut {
+    to { opacity: 0; visibility: hidden; pointer-events: none; }
+}
+/* Hareket azaltma tercihi olan kullanıcılar için anında kaybol */
+@media (prefers-reduced-motion: reduce) {
+    .splash-screen { animation-duration: 0.01s; animation-delay: 0.01s; }
+    .splash-content { animation: none; }
 }
 .splash-content {
     animation: splashIn 0.75s ease-out forwards;
@@ -373,15 +405,6 @@ hr {
 }
 
 /* ── Form Bölüm Kartı (tek sütun form düzeninde her alt bölüm) ── */
-.form-section-card {
-    background: var(--color-surface);
-    border-radius: var(--radius-card);
-    box-shadow: var(--shadow-card);
-    padding: 28px 32px;
-    margin-bottom: 24px;
-    border-left: 4px solid var(--color-brand);
-}
-
 /* Seçili hasta kartı — --color-brand sol kenar aksanı */
 .patient-selected-accent {
     border-left: 4px solid var(--color-brand) !important;
@@ -401,7 +424,7 @@ def _typography_css() -> str:
 .stCheckbox > label,
 [data-testid="stWidgetLabel"] {
     font-family: var(--font-sans) !important;
-    font-size: 0.7rem !important;
+    font-size: 0.75rem !important;
     font-weight: 500 !important;
     text-transform: uppercase !important;
     letter-spacing: 0.08em !important;
@@ -421,7 +444,7 @@ def _typography_css() -> str:
 }
 [data-testid="stMetricLabel"] {
     font-family: var(--font-sans) !important;
-    font-size: 0.68rem !important;
+    font-size: 0.75rem !important;
     font-weight: 500 !important;
     text-transform: uppercase !important;
     letter-spacing: 0.08em !important;
@@ -456,6 +479,25 @@ def _typography_css() -> str:
 def _input_css() -> str:
     """Form eleman stilleri."""
     return """
+/* ── Radio / seçenek etiketleri ──────────────────────────────────
+   Streamlit'in varsayılan koyu tema metin rengi (#fafafa) buraya
+   sızıyordu: beyaz zeminde beyaz yazı, yani okunamayan seçenekler.
+   Tema koyu tema değil, açık tema; metin rengini açıkça bastırıyoruz. */
+.stRadio label p,
+.stRadio label span,
+.stCheckbox label p,
+.stCheckbox label span {
+    color: var(--color-ink) !important;
+    font-family: var(--font-sans) !important;
+    font-size: 0.88rem !important;
+}
+.stRadio [role="radiogroup"] {
+    gap: 22px !important;
+}
+.stRadio label {
+    cursor: pointer !important;
+}
+
 /* ── Metin ve sayı girişleri ─────────────────────────────────── */
 .stTextInput > div > div > input,
 .stNumberInput > div > div > input,
@@ -517,7 +559,7 @@ def _input_css() -> str:
 .stSlider [data-testid="stTickBarMax"] {
     font-family: var(--font-mono) !important;
     color: var(--color-ink-secondary) !important;
-    font-size: 0.72rem !important;
+    font-size: 0.76rem !important;
 }
 .stSlider [data-testid="stThumbValue"] {
     font-family: var(--font-mono) !important;
@@ -612,7 +654,7 @@ div.stSuccess, .stSuccess {
     background: rgba(52, 199, 89, 0.08) !important;
     border-left: 4px solid var(--color-safe) !important;
     border-radius: 0 var(--radius-alert) var(--radius-alert) 0 !important;
-    color: #1A7D3F !important;
+    color: var(--color-safe-text) !important;
     font-family: var(--font-sans) !important;
     padding: 14px 18px !important;
 }
@@ -630,7 +672,7 @@ div.stWarning, .stWarning {
     background: rgba(255, 149, 0, 0.08) !important;
     border-left: 4px solid var(--color-warning) !important;
     border-radius: 0 var(--radius-alert) var(--radius-alert) 0 !important;
-    color: #7A4500 !important;
+    color: var(--color-warning-text) !important;
     font-family: var(--font-sans) !important;
     padding: 14px 18px !important;
 }
@@ -668,7 +710,7 @@ def _dataframe_css() -> str:
 }
 [data-testid="stDataFrame"] th {
     font-family: var(--font-sans) !important;
-    font-size: 0.68rem !important;
+    font-size: 0.75rem !important;
     font-weight: 500 !important;
     text-transform: uppercase !important;
     letter-spacing: 0.08em !important;
@@ -756,6 +798,8 @@ def apply_theme(big_font: bool = False) -> None:
 import base64
 from pathlib import Path
 
+from shared.icons import icon, ktas_dot
+
 _ASSETS_DIR = Path(__file__).parent.parent / "assets"
 
 def get_logo_wordmark_b64() -> str | None:
@@ -807,7 +851,7 @@ def brand_header_html(page_label: str) -> str:
         f'<div style="display:flex; align-items:center; gap:12px;">'
         f'{logo_html}'
         f'</div>'
-        f'<span style="font-family:var(--font-sans); font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:0.10em; color:var(--color-ink-secondary);">{page_label}</span>'
+        f'<span style="font-family:var(--font-sans); font-size:12px; font-weight:500; text-transform:uppercase; letter-spacing:0.10em; color:var(--color-ink-secondary);">{page_label}</span>'
         f'</div>'
     )
 
@@ -819,14 +863,14 @@ def disclaimer_bar_html(text: str) -> str:
     """
     return f"""
 <div style="
-    background: rgba(255,149,0,0.06);
+    background: rgba(198,106,0,0.07);
     border-left: 4px solid var(--color-warning);
     border-radius: 0 10px 10px 0;
     padding: 12px 20px;
     font-family: var(--font-sans);
     font-size: 0.82rem;
     font-weight: 400;
-    color: #7A4500;
+    color: var(--color-warning-text);
     line-height: 1.55;
     margin-bottom: 28px;
 ">{text}</div>
@@ -841,7 +885,7 @@ def section_label_html(text: str) -> str:
     return f"""
 <div style="
     font-family: var(--font-sans);
-    font-size: 0.68rem;
+    font-size: 0.75rem;
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.10em;
@@ -886,21 +930,25 @@ def ktas_badge_html(ktas: int, lang: str = "TR",
     cfg   = KTAS_CONFIG.get(ktas, KTAS_CONFIG[3])
     label = cfg["label_tr"] if lang == "TR" else cfg["label_en"]
     sub   = (cfg["sub_tr"] if lang == "TR" else cfg["sub_en"]) if show_time else ""
+    # Metin rengi olarak "text" varyantı kullanılır; "color" yalnızca
+    # noktanın dolgusudur. Ham canlı tonlar metin olarak WCAG eşiğini
+    # geçmiyordu (KTAS-1 3.55:1, KTAS-2 2.20:1).
+    text_color = cfg.get("text", cfg["color"])
     return (
         f'<span style="'
-        f'display:inline-flex;align-items:center;gap:5px;'
+        f'display:inline-flex;align-items:center;gap:6px;'
         f'background:{cfg["bg"]};'
-        f'color:{cfg["color"]};'
+        f'color:{text_color};'
         f'border-radius:var(--radius-badge);'
-        f'padding:4px 10px;'
+        f'padding:5px 11px;'
         f'font-family:var(--font-sans);'
-        f'font-size:11px;font-weight:600;'
+        f'font-size:12px;font-weight:600;'
         f'letter-spacing:0.02em;'
         f'white-space:nowrap;'
         f'">'
-        f'<span style="font-size:8px;line-height:1">●</span>'
+        f'{ktas_dot(cfg["color"], size=9)}'
         f'KTAS-{ktas} {label}' +
-        (f'<span style="opacity:0.55;font-size:10px"> · {sub}</span>' if sub else "") +
+        (f'<span style="opacity:0.75;font-size:12px"> · {sub}</span>' if sub else "") +
         f'</span>'
     )
 
@@ -921,15 +969,18 @@ def red_flag_alert_html(reasons: list[str], explanation: str = "") -> str:
         for r in reasons
     )
     expl_html = (
-        f'<div style="margin-top:12px;font-size:0.75rem;color:#A02030;padding-top:10px;border-top:1px solid rgba(255,59,48,0.18);">{explanation}</div>'
+        f'<div style="margin-top:12px;font-size:0.78rem;color:var(--color-critical-text);'
+        f'padding-top:10px;border-top:1px solid rgba(224,36,24,0.20);">{explanation}</div>'
         if explanation else ""
     )
+    flag_icon = icon("alert-octagon", size=19, color="var(--color-critical-text)",
+                     title="Kırmızı bayrak")
     return f"""
-<div style="background:rgba(255,59,48,0.06); border-left:4px solid var(--color-critical); border-radius:0 var(--radius-alert) var(--radius-alert) 0; padding:20px 24px; margin:16px 0; font-family:var(--font-sans);">
-<div style="font-size:0.88rem; font-weight:600; color:#C41E3A; margin-bottom:10px; display:flex; align-items:center; gap:8px;">
-<span style="font-size:18px; line-height:1;">⊗</span> Kırmızı Bayrak — Model Atlandı
+<div style="background:rgba(224,36,24,0.06); border-left:4px solid var(--color-critical); border-radius:0 var(--radius-alert) var(--radius-alert) 0; padding:20px 24px; margin:16px 0; font-family:var(--font-sans);">
+<div style="font-size:0.9rem; font-weight:700; color:var(--color-critical-text); margin-bottom:10px; display:flex; align-items:center; gap:9px;">
+{flag_icon} Kırmızı Bayrak — Model Atlandı
 </div>
-<ul style="margin:0; padding-left:20px; color:#7A1020; list-style:disc;">{reasons_html}</ul>
+<ul style="margin:0; padding-left:20px; color:var(--color-ink); list-style:disc;">{reasons_html}</ul>
 {expl_html}
 </div>
 """
@@ -941,18 +992,34 @@ def ai_result_card_html(result: dict, lang: str = "TR") -> str:
     """
     ktas  = result["ktas_level"]
     cfg   = KTAS_CONFIG.get(ktas, KTAS_CONFIG[3])
-    conf  = int(result["confidence"] * 100)
     expl  = result.get("explanation", "")
     badge = ktas_badge_html(ktas, lang, show_time=True)
 
+    # Güven bilinmiyorsa (kural motoru kararı ya da güven sütunu eklenmeden
+    # önce kaydedilmiş eski kayıt) rozet HİÇ gösterilmez. Eskiden burada
+    # "%0" yazılıyordu ve bu, modelin sıfır güvenle karar verdiği izlenimi
+    # veriyordu — yanlış bilgi, boş bilgiden kötüdür.
+    conf_raw = result.get("confidence")
+    if conf_raw is None:
+        conf_html = ""
+    else:
+        conf_label = "Model Güveni" if lang == "TR" else "Model Confidence"
+        conf_html = (
+            f'<span style="font-family:var(--font-mono); font-size:0.8rem; '
+            f'color:var(--color-ink-secondary); font-variant-numeric:tabular-nums;">'
+            f'{conf_label}: <strong style="color:var(--color-ink);">'
+            f'{int(conf_raw * 100)}%</strong></span>'
+        )
+
     return (
         f'<div style="background:var(--color-surface); border-radius:var(--radius-card); box-shadow:var(--shadow-card); padding:24px 28px; margin:16px 0; border-left:5px solid {cfg["color"]}; transition:box-shadow 200ms ease;">'
-        f'<div style="font-family:var(--font-sans); font-size:0.68rem; font-weight:500; text-transform:uppercase; letter-spacing:0.10em; color:var(--color-ink-secondary); margin-bottom:14px;">AI Triaj Önerisi</div>'
+        f'<div style="font-family:var(--font-sans); font-size:0.75rem; font-weight:500; text-transform:uppercase; letter-spacing:0.10em; color:var(--color-ink-secondary); margin-bottom:14px;">AI Triaj Önerisi</div>'
         f'<div style="display:flex; align-items:center; gap:14px; margin-bottom:14px; flex-wrap:wrap;">'
         f'{badge}'
-        f'<span style="font-family:var(--font-mono); font-size:0.8rem; color:var(--color-ink-secondary); font-variant-numeric:tabular-nums;">Model Güveni: <strong style="color:var(--color-ink);">{conf}%</strong></span>'
+        f'{conf_html}'
         f'</div>'
-        f'<div style="font-family:var(--font-sans); font-size:0.85rem; color:var(--color-ink-secondary); line-height:1.65; padding-top:14px; border-top:1px solid var(--color-border);">💡 {expl}</div>'
+        f'<div style="font-family:var(--font-sans); font-size:0.85rem; color:var(--color-ink-secondary); line-height:1.65; padding-top:14px; border-top:1px solid var(--color-border); display:flex; gap:9px; align-items:flex-start;">'
+        f'{icon("info", size=15, color="var(--color-ink-tertiary)")}<span>{expl}</span></div>'
         f'</div>'
     )
 
@@ -975,28 +1042,54 @@ def patient_card_html(
     border_width = "3px" if (is_selected or is_overdue) else "1px"
     bg_extra = (
         "background:rgba(122,31,43,0.03);" if is_selected else
-        "background:rgba(255,149,0,0.04);" if is_overdue  else ""
+        "background:rgba(198,106,0,0.05);" if is_overdue  else ""
     )
     shadow = "var(--shadow-card-hover)" if is_selected else "var(--shadow-card)"
 
     gender    = p.get("gender", "")
     complaint = str(p.get("chief_complaint", "—"))[:60]
-    rf_dot = (
-        '<span style="color:var(--color-critical);font-weight:700;margin-right:4px;font-size:14px;" title="Kırmızı Bayrak">⊗</span>'
-        if p.get("red_flag") else ""
-    )
     badge = ktas_badge_html(p['ai_priority'], lang, show_time=False)
-    time_color = 'var(--color-warning)' if is_overdue else 'var(--color-ink-tertiary)'
+
+    # Bekleme süresi: hedef aşıldığında metin-güvenli turuncu.
+    # Ham --color-warning metin olarak 2.02:1 veriyordu — en kritik
+    # sinyal arayüzdeki en okunmaz öğeydi.
+    time_color = ('var(--color-warning-text)' if is_overdue
+                  else 'var(--color-ink-tertiary)')
     time_weight = '600' if is_overdue else '400'
+
+    # Kırmızı bayrak eskiden 14px'lik bir "⊗" karakteriydi ve bilgi
+    # yalnızca renkle taşınıyordu. Artık ikon + METİN etiketli bir şerit
+    # (WCAG: rengi tek başına anlam taşıyıcı olarak kullanma).
+    red_flag_strip = (
+        f'<div style="display:flex;align-items:center;gap:6px;'
+        f'background:rgba(224,36,24,0.10);'
+        f'border-radius:6px;padding:4px 9px;margin-bottom:9px;'
+        f'font-family:var(--font-sans);font-size:12px;font-weight:700;'
+        f'letter-spacing:0.03em;color:var(--color-critical-text);">'
+        f'{icon("alert-octagon", size=13, color="var(--color-critical-text)")}'
+        f'{"KIRMIZI BAYRAK" if lang == "TR" else "RED FLAG"}'
+        f'</div>'
+    ) if p.get("red_flag") else ""
+
+    overdue_strip = (
+        f'<div style="display:flex;align-items:center;gap:5px;margin-top:7px;'
+        f'font-family:var(--font-sans);font-size:12px;font-weight:600;'
+        f'color:var(--color-warning-text);">'
+        f'{icon("clock", size=12, color="var(--color-warning-text)")}'
+        f'{"Hedef süre aşıldı" if lang == "TR" else "Target time exceeded"}'
+        f'</div>'
+    ) if is_overdue else ""
 
     return (
         f'<div style="background:var(--color-surface); border-radius:14px; border:{border_width} solid {border_color}; box-shadow:{shadow}; padding:16px 20px; margin-bottom:10px; transition:all 200ms ease; {bg_extra}">'
-        f'<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">'
+        f'{red_flag_strip}'
+        f'<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:8px;">'
         f'{badge}'
-        f'<span style="font-family:var(--font-mono); font-size:0.72rem; color:{time_color}; font-weight:{time_weight}; font-variant-numeric:tabular-nums;">{rf_dot}{wait_text}</span>'
+        f'<span style="font-family:var(--font-mono); font-size:12px; color:{time_color}; font-weight:{time_weight}; font-variant-numeric:tabular-nums; white-space:nowrap;">{wait_text}</span>'
         f'</div>'
-        f'<div style="font-family:var(--font-sans); font-size:0.88rem; font-weight:600; color:var(--color-ink); margin-bottom:4px; line-height:1.3;">#{p["id"]} &nbsp;·&nbsp; {p.get("age","—")} yaş &nbsp;·&nbsp; {gender}</div>'
+        f'<div style="font-family:var(--font-sans); font-size:0.88rem; font-weight:600; color:var(--color-ink); margin-bottom:4px; line-height:1.3;">#{p["id"]} &nbsp;·&nbsp; {p.get("age","—")} {"yaş" if lang == "TR" else "y"} &nbsp;·&nbsp; {gender}</div>'
         f'<div style="font-family:var(--font-sans); font-size:0.8rem; color:var(--color-ink-secondary); line-height:1.45;">{complaint}</div>'
+        f'{overdue_strip}'
         f'</div>'
     )
 
@@ -1007,13 +1100,13 @@ def vital_chip_html(label: str, value: str, unit: str = "",
     Vital bulgu gösterge çipi.
     """
     val_color = "var(--color-critical)" if is_critical else "var(--color-ink)"
-    bg_color  = "rgba(255,59,48,0.06)"  if is_critical else "var(--color-canvas)"
-    border    = "1px solid rgba(255,59,48,0.20)" if is_critical else "1px solid var(--color-border)"
-    unit_str  = f" <span style=\"font-size:0.7rem;font-weight:400;\">{unit}</span>" if unit else ""
+    bg_color  = "rgba(224,36,24,0.06)"  if is_critical else "var(--color-canvas)"
+    border    = "1px solid rgba(224,36,24,0.22)" if is_critical else "1px solid var(--color-border)"
+    unit_str  = f" <span style=\"font-size:0.75rem;font-weight:400;\">{unit}</span>" if unit else ""
 
     return (
         f'<div style="background:{bg_color}; border:{border}; border-radius:12px; padding:14px 18px; text-align:center; display:inline-flex; flex-direction:column; align-items:center; min-width:105px; flex:1;">'
-        f'<div style="font-family:var(--font-sans); font-size:0.65rem; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-ink-secondary); margin-bottom:4px;">{label}</div>'
+        f'<div style="font-family:var(--font-sans); font-size:0.75rem; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-ink-secondary); margin-bottom:4px;">{label}</div>'
         f'<div style="font-family:var(--font-mono); font-size:1.15rem; font-weight:600; color:{val_color}; font-variant-numeric:tabular-nums; line-height:1.2;">{value}{unit_str}</div>'
         f'</div>'
     )

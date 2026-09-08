@@ -1,10 +1,19 @@
-streamlit>=1.35.0
-pandas>=2.0.0
-scikit-learn>=1.4.0
-shap>=0.45.0
-openpyxl>=3.1.0
-joblib>=1.3.0
-numpy>=1.26.0
-streamlit-mic-recorder>=0.0.4
-xgboost>=2.0.0
-imbalanced-learn>=0.12.0
+# MedTriage — bağımlılıklar
+#
+# Sürümler pinlenmiştir: bu proje sklearn/xgboost API'lerine (kalibrasyon,
+# ColumnTransformer, etiket kodlama) doğrudan bağlı ve sessiz davranış
+# değişiklikleri model çıktısını bozar.
+# Test edildiği ortam: Python 3.11
+
+streamlit==1.53.0
+pandas==2.3.3
+numpy==2.1.2
+scikit-learn==1.7.2
+xgboost==3.2.0
+imbalanced-learn==0.14.2
+shap==0.51.0
+joblib==1.5.2
+openpyxl==3.1.5
+
+# Test
+pytest==9.1.1

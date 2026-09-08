@@ -29,6 +29,21 @@ ENV/
 # IDE & OS
 .idea/
 .vscode/
+.claude/
+.cursor/
+.windsurf/
 .DS_Store
 Thumbs.db
 *.swp
+
+# Eğitilmiş model dosyaları — triage_model.pkl ~24 MB; git deposunda
+# tutulmamalı. Yeniden üretmek için: python model/train_model.py
+*.pkl
+
+# SQLite çalışma zamanı veritabanları (WAL/SHM dahil)
+*.db
+*.db-wal
+*.db-shm
+
+# pytest
+.pytest_cache/

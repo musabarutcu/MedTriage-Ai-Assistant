@@ -31,6 +31,9 @@ from shared.theme import (
 )
 from shared.header import render_header
 from shared.footer import render_footer
+from shared.auth import require_access
+from shared.icons import icon
+from shared.symptoms import options as symptom_options, label as symptom_label
 
 logger = logging.getLogger(__name__)
 
@@ -46,12 +49,9 @@ st.set_page_config(
 init_db()
 
 # ---------------------------------------------------------------------------
-# KVKK güvenlik kontrolü — onay yoksa ana sayfaya yönlendir
+# Erişim kapısı — KVKK onayı + rol kontrolü (shared/auth.py)
 # ---------------------------------------------------------------------------
-if not st.session_state.get("kvkk_accepted"):
-    st.session_state.app_step = "kvkk"
-    st.switch_page("app.py")
-    st.stop()
+require_access("triaj")
 
 # ---------------------------------------------------------------------------
 # Session State başlangıç değerleri
@@ -59,7 +59,6 @@ if not st.session_state.get("kvkk_accepted"):
 if "big_font"         not in st.session_state: st.session_state.big_font         = False
 if "form_submitted"   not in st.session_state: st.session_state.form_submitted   = False
 if "last_queue_id"    not in st.session_state: st.session_state.last_queue_id    = None
-if "voice_transcript" not in st.session_state: st.session_state.voice_transcript = ""
 
 
 # ---------------------------------------------------------------------------
@@ -87,68 +86,39 @@ def _get_prediction(input_dict: dict) -> dict | None:
 
 
 # ---------------------------------------------------------------------------
-# SES GİRDİSİ
-# ---------------------------------------------------------------------------
-def _render_voice_input() -> str | None:
-    try:
-        from streamlit_mic_recorder import mic_recorder
-    except ImportError:
-        st.caption("🎤 Ses girişi: `streamlit-mic-recorder` kurulu değil.")
-        return None
-
-    st.markdown(
-        '<div style="font-family:var(--font-sans);font-size:0.8rem;'
-        'color:var(--color-ink-secondary);margin-bottom:12px;line-height:1.55;">'
-        '🎤 <strong style="color:var(--color-brand)">Mikrofona tıkla</strong> → şikayeti söyle → durdur'
-        ' &nbsp;·&nbsp; Klavyeyle de yazabilirsiniz (ses opsiyonel)'
-        ' &nbsp;·&nbsp; <strong style="color:var(--color-brand)">Sürekli dinleme yapılmaz</strong>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
-
-    audio = mic_recorder(
-        start_prompt="🎤 Kayıt Başlat",
-        stop_prompt="⏹ Kayıt Durdur",
-        just_once=True,
-        use_container_width=False,
-        key="mic_chief_complaint",
-    )
-
-    if audio is not None and audio.get("bytes"):
-        st.info("🔄 Ses kaydı alındı. STT API entegre edin (Whisper/Google Speech). Şimdilik aşağıya yazabilirsiniz.")
-        return None
-
-    return None
-
-
-# ---------------------------------------------------------------------------
-# AĞRI RENK
-# ---------------------------------------------------------------------------
-def _pain_color(score: int) -> str:
-    if score == 0:  return "var(--color-safe)"
-    if score <= 3:  return "#8BC34A"
-    if score <= 6:  return "var(--color-caution)"
-    return "var(--color-critical)"
-
-
-# ---------------------------------------------------------------------------
 # FORM BÖLÜM KART YARDIMCISI
 # ---------------------------------------------------------------------------
-def _section_open(icon: str, title: str) -> None:
-    """Form bölüm kartını açar (CSS: .form-section-card)."""
+def _section_open(icon_name: str, title: str) -> None:
+    """
+    Form bölüm başlığı.
+
+    Not: Bölüm başlığı bilinçli olarak bir "kart" DEĞİL, bir ayraç başlıktır.
+    Streamlit her `st.markdown` çıktısını kendi kapsayıcısına sarar ve
+    kapatılmamış etiketleri otomatik kapatır; dolayısıyla bir markdown
+    çağrısıyla açılan <div>, sonraki widget'ları saramaz. Eskiden burada
+    açılan `.form-section-card` kutusu bu yüzden boş bir beyaz kutu olarak
+    çiziliyor, alanlar kutunun dışında kalıyordu. Form zaten tek bir beyaz
+    kart (`stForm`) içinde olduğundan iç içe kart da gereksizdir.
+
+    Başlık ikonu emoji değil inline SVG'dir: emoji platforma göre farklı
+    çizilir, rengi ve boyutu tasarım token'larına bağlanamaz.
+    """
     st.markdown(
-        f'<div class="form-section-card">'
-        f'<div style="font-family:var(--font-sans);font-size:0.68rem;'
+        f'<div style="font-family:var(--font-sans);font-size:12px;'
         f'font-weight:600;text-transform:uppercase;letter-spacing:0.1em;'
-        f'color:var(--color-brand);margin-bottom:20px;">'
-        f'{icon} &nbsp; {title}'
+        f'color:var(--color-brand);margin:8px 0 18px;padding-bottom:10px;'
+        f'border-bottom:1px solid var(--color-border);'
+        f'display:flex;align-items:center;gap:9px;">'
+        f'{icon(icon_name, size=15, color="var(--color-brand)")}'
+        f'<span>{title}</span>'
         f'</div>',
         unsafe_allow_html=True,
     )
 
 
 def _section_close() -> None:
-    st.markdown("</div>", unsafe_allow_html=True)
+    """Bölümler arası nefes payı. (Kapatılacak bir kutu yok — bkz. _section_open.)"""
+    st.markdown("<div style='height:26px'></div>", unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
@@ -161,7 +131,7 @@ def main() -> None:
 
     # ── Erişilebilirlik toggle ─────────────────────────────────────────────
     st.session_state.big_font = st.checkbox(
-        "🔠 Büyük Font modu",
+        "Büyük font modu",
         value=st.session_state.big_font,
         key="big_font_toggle",
         help="Tüm etiket ve butonları büyütür",
@@ -170,26 +140,26 @@ def main() -> None:
     # ── Model durumu ──────────────────────────────────────────────────────
     if _load_model_bundle() is None:
         st.warning(
-            "⚠️ AI modeli yüklenmedi — sadece kırmızı bayrak kural motoru aktif. "
+            "AI modeli yüklenmedi — sadece kırmızı bayrak kural motoru aktif. "
             "Etkinleştirmek için: `python model/train_model.py`"
         )
 
     # ── Önceki gönderim başarı mesajı ─────────────────────────────────────
     if st.session_state.form_submitted and st.session_state.last_queue_id:
         st.success(
-            f"✅ Hasta kuyruğa eklendi — Sıra No: **#{st.session_state.last_queue_id}**  \n"
+            f"Hasta kuyruğa eklendi — Sıra No: **#{st.session_state.last_queue_id}**  \n"
             "Doktor panelinden takip edebilirsiniz."
         )
         st.session_state.form_submitted = False
 
     # ═══════════════════════════════════════════════════════════════════════
     # FORM — tek bir st.form içinde, TEK SÜTUN düzeni
-    # Her bölüm kendi .form-section-card kartında
+    # Her bölüm kendi ayraç başlığıyla ayrılır
     # ═══════════════════════════════════════════════════════════════════════
     with st.form(key="triage_form", clear_on_submit=True):
 
         # ── KART 1: Kimlik Bilgileri ────────────────────────────────────
-        _section_open("👤", "Kimlik Bilgileri")
+        _section_open("user", "Kimlik Bilgileri")
 
         age = st.number_input(
             "Yaş",
@@ -216,13 +186,26 @@ def main() -> None:
         _section_close()
 
         # ── KART 2: Ana Başvuru Şikayeti ───────────────────────────────
-        _section_open("💬", "Ana Başvuru Şikayeti")
+        _section_open("message-square", "Ana Başvuru Şikayeti")
 
-        chief_complaint = st.text_input(
+        # Yapılandırılmış seçim — modele giden asıl sinyal.
+        # Liste shared/symptoms.py'den gelir; aynı taksonomi eğitim
+        # verisindeki İngilizce serbest metni de normalize eder, böylece
+        # "form Türkçe / veri seti İngilizce" uyuşmazlığı ortadan kalkar.
+        symptom_code = st.selectbox(
             "Ana Şikayet",
-            value=st.session_state.voice_transcript,
-            placeholder="Örn: göğüs ağrısı, nefes darlığı, baş dönmesi...",
-            help="Hastanın başvuru nedenini kısaca yazın veya mikrofon butonunu kullanın",
+            options=[code for code, _ in symptom_options("TR")],
+            format_func=lambda c: symptom_label(c, "TR"),
+            index=None,
+            placeholder="Şikayet seçiniz...",
+            help="Hastanın başvuru nedenini listeden seçin. "
+                 "Listede yoksa 'Diğer' seçip detay alanına yazın.",
+        )
+
+        complaint_detail = st.text_input(
+            "Şikayet Detayı (opsiyonel)",
+            placeholder="Örn: 2 saattir süren, sol kola yayılan baskı tarzında ağrı",
+            help="Serbest metin. Kırmızı bayrak kuralları bu metni de tarar.",
             max_chars=500,
         )
 
@@ -242,7 +225,7 @@ def main() -> None:
         _section_close()
 
         # ── KART 3: Vital Bulgular ──────────────────────────────────────
-        _section_open("💗", "Vital Bulgular")
+        _section_open("heart-pulse", "Vital Bulgular")
 
         sbp = st.number_input(
             "Sistolik Tansiyon (mmHg)",
@@ -286,22 +269,13 @@ def main() -> None:
             min_value=0, max_value=10, value=0, step=1,
             help="0=Ağrı yok | 1-3=Hafif | 4-6=Orta | 7-10=Şiddetli",
         )
-        # Ağrı renk rozeti (pill şeklinde, semantik renk)
-        pain_labels = {
-            0: "Ağrı Yok", 1: "Çok Hafif", 2: "Hafif", 3: "Hafif",
-            4: "Orta", 5: "Orta", 6: "Orta-Şiddetli",
-            7: "Şiddetli", 8: "Şiddetli", 9: "Çok Şiddetli", 10: "Dayanılmaz",
-        }
-        pain_col = _pain_color(pain_scale)
-        st.markdown(
-            f'<div style="display:flex;margin-top:8px;margin-bottom:12px;">'
-            f'<div style="font-family:var(--font-mono);font-weight:600;font-size:0.92rem;'
-            f'color:{pain_col};background:{pain_col}18;padding:6px 18px;'
-            f'border-radius:999px;border:1px solid {pain_col}40;">'
-            f'{pain_scale}/10 &nbsp;·&nbsp; {pain_labels.get(pain_scale, "")}'
-            f'</div></div>',
-            unsafe_allow_html=True,
-        )
+        # NOT: Buraya eskiden ağrı skorunu renkli bir rozette tekrar eden
+        # bir gösterge çiziliyordu. `st.form` içinde widget değişimi yeniden
+        # çalıştırma tetiklemediğinden rozet her zaman formun yüklendiği andaki
+        # değeri (0 — "Ağrı Yok") gösteriyordu: kaydırıcı 7'de dururken rozet
+        # yeşil "0/10 · Ağrı Yok" yazıyordu. Klinik bir formda yanlış bilgi
+        # gösteren bir bileşen, hiç göstermemekten kötüdür; kaldırıldı.
+        # Kaydırıcı zaten seçili değeri tutamacın üzerinde gösteriyor.
 
         mental_status = st.selectbox(
             "Mental Durum (AVPU)",
@@ -321,41 +295,29 @@ def main() -> None:
         # ── Gönder butonu ──────────────────────────────────────────────
         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
         submitted = st.form_submit_button(
-            "🏥  Triaj Kaydını Gönder",
+            "Triaj Kaydını Gönder",
+            icon=":material/local_hospital:",
             use_container_width=True,
             type="primary",
         )
 
     # ═══════════════════════════════════════════════════════════════════════
-    # SES GİRDİSİ — form DIŞINDA (widget state uyumluluğu)
-    # ═══════════════════════════════════════════════════════════════════════
-    _section_open("🎤", "Ses ile Şikayet Girişi")
-    st.markdown(
-        '<span style="font-family:var(--font-sans);font-size:0.78rem;'
-        'color:var(--color-ink-secondary);font-style:italic;">Opsiyonel — '
-        'Sonucu \'Ana Şikayet\' alanına kopyalayabilirsiniz.</span>',
-        unsafe_allow_html=True,
-    )
-    st.markdown('<div class="recording-active">', unsafe_allow_html=True)
-    voice_text = _render_voice_input()
-    st.markdown("</div>", unsafe_allow_html=True)
-    _section_close()
-
-    if voice_text:
-        st.session_state.voice_transcript = voice_text
-        st.rerun()
-
-    # ═══════════════════════════════════════════════════════════════════════
-    # FORM GÖNDERİM İŞLEMİ — iş mantığı değişmedi
+    # FORM GÖNDERİM İŞLEMİ
     # ═══════════════════════════════════════════════════════════════════════
     if not submitted:
         render_footer()
         return
 
-    if not chief_complaint.strip():
-        st.error("❌ Ana şikayet alanı boş bırakılamaz.")
+    if not symptom_code:
+        st.error("Ana şikayet seçilmeden triaj kaydı oluşturulamaz.")
         render_footer()
         return
+
+    # Kuyrukta ve kural motorunda kullanılacak okunur şikayet metni
+    chief_complaint = symptom_label(symptom_code, "TR")
+    detail = complaint_detail.strip()
+    if detail:
+        chief_complaint = f"{chief_complaint} — {detail}"
 
     arrival_mode_map = {
         "Yürüyerek": 1, "Ambulans": 2, "Helikopter": 3,
@@ -367,6 +329,9 @@ def main() -> None:
         "sbp": sbp, "dbp": dbp, "heart_rate": heart_rate,
         "resp_rate": resp_rate, "temperature": temperature,
         "spo2": spo2, "mental_status": mental_code,
+        # Yaş, kural motorunun pediatrik eşikleri seçebilmesi için şart:
+        # bebekte nabız 150 normaldir, erişkinde ciddi taşikardidir.
+        "age": int(age),
     }
     input_dict = {
         "age":           int(age),
@@ -379,20 +344,22 @@ def main() -> None:
         "sbp": float(sbp), "dbp": float(dbp),
         "heart_rate": float(heart_rate), "resp_rate": float(resp_rate),
         "temperature": float(temperature), "spo2": float(spo2),
-        "patients_per_hour": 5,
+        "symptom_code": symptom_code,
     }
 
     # Sonuç başlığı
     st.markdown(
         '<div style="font-family:var(--font-sans);font-size:1.1rem;'
         'font-weight:600;color:var(--color-ink);margin:28px 0 20px;'
-        'letter-spacing:-0.01em;">📊 &nbsp; Değerlendirme Sonucu</div>',
+        'letter-spacing:-0.01em;display:flex;align-items:center;gap:10px;">'
+        + icon("activity", size=19, color="var(--color-brand)")
+        + '<span>Değerlendirme Sonucu</span></div>',
         unsafe_allow_html=True,
     )
 
     # ── Adım 1: Kırmızı bayrak ────────────────────────────────────────────
     with st.spinner("Kırmızı bayrak kontrolü..."):
-        flag_result = check_red_flags(vitals, chief_complaint)
+        flag_result = check_red_flags(vitals, detail, symptom_code=symptom_code)
 
     if flag_result["red_flag"]:
         reasons = flag_result.get("all_reasons", [flag_result.get("reason", "")])
@@ -403,11 +370,16 @@ def main() -> None:
             ),
             unsafe_allow_html=True,
         )
-        ai_priority    = 1
-        ai_explanation = f"Kırmızı bayrak tetiklendi. Neden: {flag_result['reason']}"
+        # Şiddet derecelendirmesi: eskiden her kırmızı bayrak KTAS-1'e
+        # sabitleniyordu; apne ile hipertansif kriz aynı sayılıyordu.
+        ai_priority    = flag_result.get("suggested_ktas") or 1
+        ai_explanation = (f"Kırmızı bayrak (KTAS-{ai_priority} önerildi). "
+                          f"Neden: {flag_result['reason']}")
         red_flag_bool  = True
+        ai_confidence  = None      # Model çalışmadı; sahte güven gösterilmez
+        rule_ktas      = ai_priority
     else:
-        st.success("✅ Kırmızı bayrak tespit edilmedi — AI değerlendirmesi başlıyor...")
+        st.success("Kırmızı bayrak tespit edilmedi — AI değerlendirmesi başlıyor...")
         with st.spinner("AI modeli çalışıyor..."):
             prediction = _get_prediction(input_dict)
 
@@ -415,11 +387,19 @@ def main() -> None:
             st.markdown(ai_result_card_html(prediction, lang="TR"), unsafe_allow_html=True)
             ai_priority    = prediction["ktas_level"]
             ai_explanation = prediction["explanation"]
+            ai_confidence  = prediction["confidence"]
+            if prediction.get("confidence_band") == "low":
+                st.warning(
+                    "Model bu vakada kararsız (düşük güven bandı). "
+                    "Öneriyi bağlayıcı değil, ikinci görüş olarak değerlendirin."
+                )
         else:
-            st.warning("⚠️ AI modeli kullanılamıyor. KTAS-3 (varsayılan) atandı.")
+            st.warning("AI modeli kullanılamıyor. KTAS-3 (varsayılan) atandı.")
             ai_priority    = 3
             ai_explanation = "AI modeli yüklenmedi; varsayılan KTAS-3 atandı."
+            ai_confidence  = None
         red_flag_bool = False
+        rule_ktas     = None
 
     # ── Adım 2: Kuyruğa ekle ──────────────────────────────────────────────
     with st.spinner("Hasta kuyruğa ekleniyor..."):
@@ -429,12 +409,13 @@ def main() -> None:
                 chief_complaint=chief_complaint.strip(),
                 vitals=vitals, ai_priority=ai_priority,
                 ai_explanation=ai_explanation, red_flag=red_flag_bool,
+                ai_confidence=ai_confidence, symptom_code=symptom_code,
+                rule_ktas=rule_ktas,
             )
             st.session_state.last_queue_id  = patient_id
             st.session_state.form_submitted = True
-            st.session_state.voice_transcript = ""
         except Exception as e:
-            st.error(f"❌ Kuyruğa ekleme hatası: {e}")
+            st.error(f"Kuyruğa ekleme hatası: {e}")
             logger.error(f"Kuyruk hatasi: {e}", exc_info=True)
             render_footer()
             return
@@ -442,5 +423,7 @@ def main() -> None:
     st.rerun()
 
 
-if __name__ == "__main__" or True:
-    main()
+# Streamlit her sayfayı doğrudan çalıştırır; koşula gerek yok.
+# (Eskiden burada her zaman doğru olan `__name__ == "__main__" or True`
+#  kalıbı vardı.)
+main()

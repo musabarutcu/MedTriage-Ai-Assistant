@@ -19,6 +19,8 @@ from pathlib import Path
 
 import streamlit as st
 
+from shared.auth import PAGE_ACCESS, render_user_chip
+
 _ASSETS = Path(__file__).parent.parent / "assets"
 
 # ---------------------------------------------------------------------------
@@ -66,8 +68,8 @@ def _logo_img_html(filename: str, height: int) -> str:
 # Header render
 # ---------------------------------------------------------------------------
 
+# key → (panel etiketi, nav buton metni, hedef sayfa yolu, hedefin erişim anahtarı)
 _PAGE_META: dict[str, tuple[str, str, str]] = {
-    # key → (panel label, nav button text, target page path)
     "triaj": (
         "Triaj Kayıt",
         "Doktor Paneline Geç →",
@@ -126,13 +128,25 @@ def render_header(current_page: str) -> None:
 """,
             unsafe_allow_html=True,
         )
+        chip = render_user_chip()
+        if chip:
+            st.markdown(
+                f'<div style="display:flex;justify-content:flex-end;'
+                f'margin-top:-6px;">{chip}</div>',
+                unsafe_allow_html=True,
+            )
 
     with btn_col:
         st.markdown(
             '<div style="display:flex;align-items:center;justify-content:flex-end;height:56px;">',
             unsafe_allow_html=True,
         )
-        if btn_target:
+        # Kullanıcının giremeyeceği panele götüren buton gösterilmez.
+        # Aksi halde hemşireye, tıklayınca kesin hata verecek bir
+        # "Doktor Paneline Geç" butonu sunulmuş oluyordu.
+        target_key = "doktor" if current_page == "triaj" else "triaj"
+        role = st.session_state.get("user_role", "")
+        if btn_target and role in PAGE_ACCESS.get(target_key, ()):
             if st.button(
                 btn_text,
                 key=f"nav_btn_{current_page}",
