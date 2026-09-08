@@ -84,22 +84,6 @@ ve verdiği karar `decision_log` tablosuna adıyla birlikte yazılır.
 
 ---
 
-## Ekranlar
-
-**Triaj kayıt formu** — hemşire hastayı yapılandırılmış alanlarla kaydeder. Ana şikayet
-serbest metin değil, 26 kanonik semptom kodundan seçilir; aynı taksonomi modelin eğitiminde
-de kullanıldığı için form ile eğitim verisi aynı dili konuşur.
-
-![Triaj kayıt formu](assets/screenshots/triaj-kayit.png)
-
-**Hekim paneli** — kuyruk KTAS seviyesine göre sıralanır; kırmızı bayraklı ve hedef süresi
-aşan hastalar işaretlenir. Sağ tarafta hastanın vitalleri, modelin önerisi ve **gerçek güven
-skoru**, kararın gerekçesi ve eğitim verisindeki en benzer 3 vaka görünür. Hekim öneriyi
-onaylar veya seviyeyi düzelterek geçersiz kılar.
-
-![Hekim paneli](assets/screenshots/doktor-paneli.png)
-
----
 
 ## Teknoloji yığını
 
